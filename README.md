@@ -63,6 +63,16 @@ seconds once the cache is warm.
 | imdb | LLM-head (mean) | acc / auc | **0.914** / **0.971** |
 | imdb | LLM-head (last) | acc / auc | 0.884 / 0.955 |
 | imdb | LightGBM on h (mean) | acc / auc | 0.895 / 0.965 |
+| adult (4k) | head-only MLP | acc / auc | 0.831 / 0.885 |
+| adult (4k) | LoRA r8 + head (joint) | acc / auc | 0.812 / 0.884 |
+| ecom next-item | recgen ranker | rec@10 / mrr@20 | **0.028** / **0.016** |
+| ecom next-item | popularity | rec@10 / mrr@20 | 0.022 / 0.011 |
+| ecom next-item | ALS (32f) | rec@10 / mrr@20 | 0.003 / 0.002 |
+
+E-commerce pilot (Amazon Musical Instruments, 6.9k-item catalog, next-item
+prediction): histories + item metadata verbalized and encoded by the frozen
+360M model; a GenRec-style catalog-aware head `score = <W h_u, e_i> + b_i`
+trained in ~5s beats popularity and ALS with zero feature engineering.
 
 Preliminary read: the frozen LLM encoder is a few points behind GBDT on
 pure-numeric tabular (expected — see TabLLM) but **beats TF-IDF + logistic
