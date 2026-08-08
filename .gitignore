@@ -10,3 +10,4 @@ wandb/
 .DS_Store
 recgen.egg-info/
 checkpoints/
+.github/
