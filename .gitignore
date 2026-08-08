@@ -9,3 +9,4 @@ experiments/results/
 wandb/
 .DS_Store
 recgen.egg-info/
+checkpoints/

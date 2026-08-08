@@ -77,3 +77,59 @@ feature engineering" — and the gap closes with LoRA adaptation. Phase 2 plan:
 
 All experiments reproducible: `scripts/run_all.sh`, results in
 `experiments/results/results.csv`.
+
+## Phase 2a: LoRA + head joint training (Adult, SmolLM2-360M)
+
+Fair comparison on the SAME 4k-row training subset (same test split as the full runs):
+
+| config (4k train) | acc | auc |
+|---|---|---|
+| head-only (frozen, MLP head) | 0.8313 | 0.8846 |
+| LoRA r8 α16 + head (joint) | 0.8122 | 0.8842 |
+| reference: head-only on full 24k | 0.8477 | 0.9052 |
+| reference: LightGBM raw | 0.8621 | 0.9217 |
+
+Verdict: **joint LoRA does not help at this data scale on tabular** — the
+extra 1.6M LoRA params overfit 4k rows. GenRec's Phase-1 gains (+10-20%) come
+from *unlabeled domain pretraining* (Phase 1 = pretraining corpora, not small
+task sets). Implication: the right Phase-2 lever is domain pretraining + task
+head, or ranking heads (e-commerce), NOT small-n joint LoRA. IMDB LoRA was
+aborted: MPS long-sequence backward is ~0.5-2 rows/s (multi-hour runs).
+
+Hardware notes: MPS fp32 is fine for LoRA (20-24 rows/s on 150-tok prompts);
+long sequences (IMDB) + backward collapse to 1-2 rows/s. Batch >= 16 required
+for reasonable MPS utilization; use_cache=False + base_model.model.model path
+needed to avoid the "Placeholder storage" MPS bug and 32-layer memory blowup.
+
+## Phase 2c: e-commerce pilot (in progress)
+
+## Phase 2c: e-commerce pilot — Amazon Musical Instruments (next-item)
+
+Data: Amazon Reviews 2023, Musical_Instruments. 52.7k users (>=6 interactions),
+71.2k items (>=5 users). Sample: 8k train / 1k val / 1k test users, catalog
+6,941 items, history = last 10 purchased items, target = last interaction.
+
+Verbalization: "The user recently purchased: <title> by <store> | ..." and
+"Item: <title> by <store>. Categories: ... Features: ...". Both user histories
+and catalog items encoded once by frozen SmolLM2-360M (mean pooling, cached).
+Ranking head (GenRec-style catalog-aware): score(u,i) = <W h_u, e_i> + b_i,
+full-catalog softmax CE, trained in ~5s on MPS.
+
+| model (test 1k users) | recall@10 | recall@20 | mrr@20 |
+|---|---|---|---|
+| recgen LLM-embedding ranker | 0.028 | 0.044 | 0.0162 |
+| popularity baseline | 0.022 | 0.035 | 0.0113 |
+| ALS (32 factors, implicit) | 0.003 | 0.004 | 0.0024 |
+
+Verdict: the frozen-LLM-embedding ranker beats popularity (+25-27% relative)
+and ALS (~7x) out of the box, with no feature engineering and training the
+head in seconds. This is the architecture's home turf: semantically rich item
+metadata + purchase history in one shared LLM space. Obvious headroom: LoRA/
+domain pretraining on the backbone, ratings in history, candidate generation
+(2-stage), more users.
+
+Phase 2 lessons so far:
+1. Frozen embeddings + tiny head = cheap, competitive, no feature engineering.
+2. Small-n joint LoRA does not help (Adult); backbone adaptation belongs at
+   the domain-pretraining stage (GenRec Phase 1), which needs unlabeled data.
+3. Ranking heads (catalog-aware) are where the architecture shines.
