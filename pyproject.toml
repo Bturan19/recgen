@@ -1,14 +1,22 @@
 [project]
 name = "recgen"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "LLM-as-encoder framework: verbalize any instance as text, encode with a small LLM, train a lightweight head for classification, regression, or ranking."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["llm", "embeddings", "recommendation", "tabular", "text-classification", "recsys"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "accelerate>=1.14.0",
     "datasets>=5.0.1",
     "fastapi>=0.141.1",
-    "implicit>=0.7.3",
     "lightgbm>=4.7.0",
     "peft>=0.20.0",
     "polars>=1.43.2",
@@ -17,18 +25,25 @@ dependencies = [
     "torch>=2.13.0",
     "transformers>=5.14.1",
     "uvicorn>=0.52.1",
-    "wandb>=0.28.1",
     "xgboost>=3.4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Bturan19/recgen"
+Repository = "https://github.com/Bturan19/recgen"
+Blog = "https://github.com/Bturan19/recgen/blob/main/blog/recgen-llm-as-encoder.md"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["recgen", "recgen.verbalizers"]
+packages = ["recgen", "recgen.verbalizers", "api"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
