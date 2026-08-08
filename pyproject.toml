@@ -1,0 +1,26 @@
+[project]
+name = "recgen"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.14.0",
+    "datasets>=5.0.1",
+    "lightgbm>=4.7.0",
+    "peft>=0.20.0",
+    "polars>=1.43.2",
+    "scikit-learn>=1.9.0",
+    "sentencepiece>=0.2.2",
+    "torch>=2.13.0",
+    "transformers>=5.14.1",
+    "wandb>=0.28.1",
+    "xgboost>=3.4.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["recgen", "recgen.verbalizers"]

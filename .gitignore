@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+data/
+.cache/
+experiments/results/
+*.npy
+wandb/
+.DS_Store
+recgen.egg-info/
