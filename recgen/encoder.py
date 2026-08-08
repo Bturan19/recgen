@@ -69,6 +69,10 @@ class FrozenEncoder:
                     f"({time.time() - t0:.0f}s elapsed)"
                 )
         H = torch.cat(all_h).numpy().astype(np.float32)
+        n_bad = int((~np.isfinite(H)).any(axis=1).sum())
+        if n_bad:
+            print(f"[FrozenEncoder] WARNING: {n_bad}/{n} rows had non-finite values; zeroed them")
+            H[~np.isfinite(H)] = 0.0
         if progress:
             print(
                 f"[FrozenEncoder] encoded {n} prompts in {time.time() - t0:.0f}s "

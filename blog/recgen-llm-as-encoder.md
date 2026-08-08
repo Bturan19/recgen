@@ -64,24 +64,44 @@ House prices: recgen 0.34 MAE (log$) vs LightGBM 0.087. On pure numeric
 tabular, GBDT remains king. This matches the TabLLM result and we're not going
 to pretend otherwise.
 
-### E-commerce next-item recommendation — the home turf
+### E-commerce next-item recommendation — the honest home turf
 
 Amazon Musical Instruments, next-item prediction, 25k users / 13,524-item
-catalog (history = last 10 purchases incl. ratings):
+catalog (history = last 10 purchases incl. ratings). Test: 2.5k users,
+one held-out purchase per user, ranked against the full catalog.
 
-| model | recall@10 | recall@20 | mrr@20 |
+| model | recall@10 | recall@20 | mrr@20 (95% CI) |
 |---|---|---|---|
-| **recgen 2-stage (popularity + emb-kNN candidates → head)** | **0.342** | **0.500** | **0.160** |
-| recgen full-catalog | 0.026 | 0.038 | 0.014 |
-| popularity | 0.024 | 0.032 | 0.011 |
-| ALS (64 factors) | 0.001 | 0.002 | 0.001 |
+| **recgen (frozen 360M + head)** | **0.0264** | **0.038** | **0.0139** [0.0109, 0.0172] |
+| ALS (128 factors, fair protocol) | 0.0236 | 0.036 | 0.0143 [0.0110, 0.0181] |
+| popularity | 0.024 | 0.032 | 0.0106 |
+| EASE (catalog-only) | 0.006 | 0.010 | 0.0033 |
+| ItemKNN (k=100) | 0.001 | 0.002 | 0.0006 |
+| last-item embedding similarity | 0.001 | 0.002 | 0.0008 |
 
-The ranking head — trained in **~15 seconds** on frozen embeddings — beats
-popularity by ~13x and ALS by ~33x at recall@10, with zero feature
-engineering. Purchase histories and item metadata (title, store, categories,
-features) live in one shared semantic space. The 2-stage deployment shape
-(popularity ∪ embedding-kNN candidate set, then head ranking — the way GenRec
-would actually be served) reaches **34% recall@10 / 50% recall@20**.
+Under identical evaluation (all models ranked by their own scores over the
+same catalog, same users, bootstrap CIs), the frozen-LLM-embedding ranker is
+**statistically tied with a properly-tuned ALS** and clearly beats
+popularity, EASE, ItemKNN, and last-item similarity. The ranking head trains
+in ~15 seconds and uses no user/item ID embeddings — just verbalized purchase
+histories and item metadata in a shared semantic space.
+
+*Note: an earlier version of this analysis reported much larger 2-stage
+numbers; those were inflated by a metric bug (train users counted in the
+test denominator) and have been corrected here.*
+
+### Where it fails (honestly)
+
+- **Anomaly detection.** Unsupervised: TF-IDF + IsolationForest gets 0.837
+  AUC on SMS spam vs 0.491 for LLM embeddings — spam is lexical, and semantic
+  embeddings place it "close to normal." On numeric tabular (cardiotocography,
+  8% pathological), raw features + IsolationForest hit 0.934 AUC while LLM
+  embeddings are exactly random (0.500). Supervised text AD is the exception
+  (0.9995 AUC) — but that's just classification.
+- **Model size sweet spot is not 0.6B.** On IMDB (same split, same head):
+  SmolLM2-1.7B 0.914 / 0.970, SmolLM2-360M 0.906 / 0.958, Qwen3-0.6B
+  0.886 / 0.953. The 0.6B class is slower *and* worse; 1.7B is the real
+  quality upgrade at ~3.7x compute.
 
 ## What we learned the hard way
 

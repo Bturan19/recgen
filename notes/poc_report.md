@@ -136,6 +136,9 @@ Phase 2 lessons so far:
 
 ## Phase 2c follow-up: v2 — 25k users, ratings in history, 2-stage
 
+> SUPERSEDED: the 2-stage numbers in this section were inflated by a metric
+> bug (see CORRECTION below). Keep only the full-catalog comparisons here.
+
 Amazon Musical Instruments, v2: 20k/2.5k/2.5k users, catalog 13,524 items
 (bigger than v1's 6,941), history = last 10 purchases WITH ratings
 ("rated x/5"), ranking head identical.
@@ -156,3 +159,76 @@ Takeaways:
   catalog-size dependent (report catalog size always).
 - Head training: 12-31s on frozen embeddings. Everything else is cached
   encodes.
+
+## CORRECTION + Phase 3: honest e-commerce numbers, AD, model scaling
+
+### E-commerce v3 — corrected protocol (strong_baselines.py)
+
+BUG FOUND: the v2 2-stage loop counted hits over ALL 25k users (train
+included) but divided by test count only, inflating recgen 2-stage ~10x
+(0.342/0.500/0.160 were WRONG). Corrected loop: test users only. Corrected
+table (same test users, same 300 candidates for every ranker, bootstrap 95%
+CI on MRR):
+
+full-catalog (13,524 items):
+| model | recall@10 | recall@20 | mrr@20 (ci95) |
+|---|---|---|---|
+| recgen (LLM-emb head) | 0.0264 | 0.038 | 0.0139 [0.0109,0.0172] |
+| ALS 128f (fair protocol) | 0.0236 | 0.036 | 0.0143 [0.0110,0.0181] |
+| popularity | 0.024 | 0.032 | 0.0106 |
+| EASE (catalog-only) | 0.0064 | 0.010 | 0.0033 |
+| ItemKNN (k=100) | 0.0008 | 0.002 | 0.0006 |
+| last-item emb sim | 0.0008 | 0.002 | 0.0008 |
+
+2-stage (same 300 candidates: popularity ∪ mean-history-emb kNN):
+| model | recall@10 | recall@20 | mrr@20 (ci95) |
+|---|---|---|---|
+| recgen | 0.0296 | 0.044 | 0.0150 [0.0116,0.0187] |
+| ALS 128f | 0.022 | 0.030 | 0.0111 [0.0081,0.0145] |
+| popularity | 0.024 | 0.032 | 0.0100 |
+| last-item | 0.002 | 0.003 | 0.001 |
+
+Honest read: recgen is statistically TIED with a properly-tuned ALS on
+full-catalog MRR (CIs overlap; ALS slightly higher MRR, recgen higher
+recall@10) and modestly better in the 2-stage setting. It clearly beats
+popularity/ItemKNN/EASE/last-item. The defensible claim: "a frozen 360M LLM
++ a 15-second-trained head matches a tuned MF recommender with zero feature
+engineering and no user/item ID embeddings." NOT "7-33x better".
+
+### Anomaly detection (anomaly.py)
+
+SMS spam (text, 5574 msgs, 13.4% spam):
+- unsupervised: TF-IDF+IsolationForest 0.837 AUC >> LLM-emb+IF 0.491; LLM
+  kNN-distance 0.28-0.32 (near random). Spam is lexical; semantic embeddings
+  put it close to normal.
+- supervised: LLM-emb + MLP head 0.9995 AUC; LLM-emb + logreg 0.9997;
+  TF-IDF + logreg 0.989. LLM embeddings win when labels exist.
+
+cardiotocography (numeric tabular AD, 8.3% pathological):
+- raw + IsolationForest 0.934 AUC; raw+kNN 0.72.
+- LLM embeddings: 0.500 everywhere (random) — numeric verbalization gives
+  the frozen LLM nothing. raw+LLM concat ≈ raw alone.
+
+Verdict: AD is NOT a regime where this architecture shines, except as
+supervised text classification (which is just classification). Honest
+limitation, documented.
+
+### Model scaling (model_compare.py, IMDB 2k train/500 test, same head)
+
+| model | acc | auc | encode/s (M1, fp16) |
+|---|---|---|---|
+| SmolLM2-1.7B | 0.914 | 0.970 | ~1.5 |
+| SmolLM2-360M | 0.906 | 0.958 | ~6 |
+| Qwen3-0.6B | 0.886 | 0.953 | ~2.7 |
+
+The 0.6B class is a dead zone: Qwen3-0.6B is both slower and worse than
+360M. The real quality upgrade is 1.7B (+0.8 acc, 3.7x compute). Default
+stays 360M (speed); 1.7B available for quality.
+
+### Engineering fixes
+- FrozenEncoder: sanitizes non-finite pooled values (MPS fp16 instability;
+  found 67/5574 NaN rows on SMS); warns + zeroes.
+- Baseline protocol: ALS/ItemKNN/EASE now trained on ALL users' pre-test
+  history (fair factors for test users) — previously test users had no
+  factors, artificially crushing ALS.
+- TemplateVerbalizer now supports polars frames.

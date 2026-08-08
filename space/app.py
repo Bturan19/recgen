@@ -11,16 +11,24 @@ if DEVICE == "mps" and not torch.backends.mps.is_available():
     DEVICE = "cpu"
 
 GUITAR_ITEMS = [
-    "Fender Player Stratocaster Electric Guitar (Sunburst)",
-    "Gibson Les Paul Standard '60s Electric Guitar",
-    "Boss DS-1 Distortion Pedal",
-    "Ibanez TS9 Tube Screamer Overdrive Pedal",
-    "Ernie Ball Regular Slinky Guitar Strings 10-46",
-    "Fender 8ft Instrument Cable",
-    "Marshall MG30GFX 30W Combo Guitar Amplifier",
-    "Shure SM57 Dynamic Microphone",
-    "D'Addario Guitar Capo",
-    "Sennheiser HD 280 Pro Headphones",
+    "Item: Fender Player Stratocaster. Category: electric guitar. Single-coil pickups, classic twang, versatile clean tones.",
+    "Item: Gibson Les Paul Standard. Category: electric guitar. Humbuckers, mahogany body, warm thick sustain, rock tone.",
+    "Item: Telecaster Electric Guitar. Category: electric guitar. Bright twang, country and blues classic.",
+    "Item: Taylor Dreadnought Acoustic. Category: acoustic guitar. Spruce top, warm resonant projection.",
+    "Item: Yamaha Classical Nylon Guitar. Category: acoustic guitar. Nylon strings, mellow tone, fingerstyle.",
+    "Item: Boss DS-1 Distortion Pedal. Category: effects pedal. Legendary hard rock distortion, scooped mids.",
+    "Item: Ibanez TS9 Tube Screamer. Category: effects pedal. Vintage overdrive, warm mid boost, blues lead tone.",
+    "Item: Behringer Fuzz Pedal. Category: effects pedal. Classic silicon fuzz, heavy sustain, psychedelic rock.",
+    "Item: TC Electronic Chorus Pedal. Category: effects pedal. Spacious modulation, shimmering ambience.",
+    "Item: Fender 8ft Instrument Cable. Category: cable. Braided shield, quiet signal.",
+    "Item: Ernie Ball Slinky Strings. Category: strings. Nickel wound 10-46, bright punchy tone.",
+    "Item: D'Addario NYXL Strings. Category: strings. 11-49 medium, tuning stability, enhanced midrange.",
+    "Item: Marshall MG30GFX Combo Amp. Category: amplifier. 30 watts, overdrive channel, British crunch.",
+    "Item: Fender 15W Practice Amp. Category: amplifier. Clean sparkle, bedroom volume.",
+    "Item: Mesa Boogie 100W Head. Category: amplifier. High gain, dual rectifier, metal tone.",
+    "Item: Shure SM57 Microphone. Category: microphone. Cardioid, industry standard for instrument miking.",
+    "Item: Sennheiser HD 280 Headphones. Category: headphones. Closed back, flat response, studio monitoring.",
+    "Item: Focusrite Audio Interface. Category: interface. 2 inputs, USB, home recording.",
 ]
 
 tokens, model = None, None

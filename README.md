@@ -26,16 +26,19 @@ content-addressed and cached, so re-training heads costs seconds.
   TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
   360M model.
 - **E-commerce next-item rec** (Amazon Musical Instruments, 25k users /
-  13.5k-item catalog): ranking head trained in ~15s beats popularity (13x) and
-  ALS (33x) with zero feature engineering; the 2-stage deployment
-  (popularity + embedding-kNN candidates -> head) hits **34% recall@10 /
-  50% recall@20 / MRR@20 0.160**.
+  13.5k-item catalog): a frozen-LLM-embedding ranker whose head trains in
+  ~15s is statistically tied with tuned ALS (128f) on full-catalog MRR
+  (0.0139 vs 0.0143, CIs overlap) and beats popularity/ItemKNN/EASE —
+  with zero feature engineering and no user/item ID embeddings.
 - **Adult income**: 0.848/0.905 vs LightGBM 0.862/0.922 — within 1.5pts,
   no feature engineering.
-- Honest limits: pure-numeric regression (house prices) still belongs to GBDT.
+- Honest limits: pure-numeric regression (house prices) and unsupervised
+  text/tabular anomaly detection still belong to classical methods; the LLM
+  encoder wins where semantics + labels meet.
 
-Full numbers and analysis: [blog post](blog/recgen-llm-as-encoder.md) and
-[notes/poc_report.md](notes/poc_report.md).
+Full numbers, corrected baselines, and analysis:
+[notes/poc_report.md](notes/poc_report.md) and
+[blog post](blog/recgen-llm-as-encoder.md).
 
 ## Install
 
