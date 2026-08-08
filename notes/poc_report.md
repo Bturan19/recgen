@@ -133,3 +133,26 @@ Phase 2 lessons so far:
 2. Small-n joint LoRA does not help (Adult); backbone adaptation belongs at
    the domain-pretraining stage (GenRec Phase 1), which needs unlabeled data.
 3. Ranking heads (catalog-aware) are where the architecture shines.
+
+## Phase 2c follow-up: v2 — 25k users, ratings in history, 2-stage
+
+Amazon Musical Instruments, v2: 20k/2.5k/2.5k users, catalog 13,524 items
+(bigger than v1's 6,941), history = last 10 purchases WITH ratings
+("rated x/5"), ranking head identical.
+
+| model (test 2.5k users) | recall@10 | recall@20 | mrr@20 |
+|---|---|---|---|
+| recgen full-catalog | 0.0264 | 0.038 | 0.0139 |
+| recgen 2-stage (300 candidates) | **0.342** | **0.500** | **0.160** |
+| popularity | 0.024 | 0.032 | 0.0106 |
+| ALS (64 factors) | 0.0008 | 0.0016 | 0.0006 |
+
+Takeaways:
+- The 2-stage deployment (popularity ∪ embedding-kNN candidates -> head
+  ranking) is the real-world shape: **34% recall@10 / 50% recall@20**, ~13x
+  full-catalog and ~14x popularity. This is the number to quote.
+- More users + ratings did not lift full-catalog recall vs v1 (0.026 vs 0.028)
+  — the bigger catalog makes full-catalog ranking harder; recall metrics are
+  catalog-size dependent (report catalog size always).
+- Head training: 12-31s on frozen embeddings. Everything else is cached
+  encodes.

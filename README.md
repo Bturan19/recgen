@@ -25,9 +25,11 @@ content-addressed and cached, so re-training heads costs seconds.
 - **IMDB sentiment** (12k reviews): recgen 0.914 acc / 0.971 auc vs
   TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
   360M model.
-- **E-commerce next-item rec** (Amazon Musical Instruments, 6.9k items):
-  ranking head trained in 5s beats popularity (+25% MRR) and ALS (~7x) with
-  zero feature engineering.
+- **E-commerce next-item rec** (Amazon Musical Instruments, 25k users /
+  13.5k-item catalog): ranking head trained in ~15s beats popularity (13x) and
+  ALS (33x) with zero feature engineering; the 2-stage deployment
+  (popularity + embedding-kNN candidates -> head) hits **34% recall@10 /
+  50% recall@20 / MRR@20 0.160**.
 - **Adult income**: 0.848/0.905 vs LightGBM 0.862/0.922 — within 1.5pts,
   no feature engineering.
 - Honest limits: pure-numeric regression (house prices) still belongs to GBDT.

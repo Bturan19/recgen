@@ -54,10 +54,11 @@ def main(n_users: int = 25000, max_history: int = 10, min_hist: int = 5, n_cand:
     record("ecom2_recgen_full", **{k: v for k, v in res.items()})
     print(f"recgen full-catalog: " + " ".join(f"{k}={v:.4f}" for k, v in res.items()))
 
-    item_hist_emb = np.stack([
-        E[np.array([all_items.index(it) for it, _ in hist if it in all_items])].mean(axis=0)
-        for _, hist, _ in splits
-    ])
+    item_hist_emb = np.zeros((n_users, E.shape[1]))
+    for i, (_, hist, _) in enumerate(splits):
+        idx = np.array([all_items.index(it) for it, _ in hist if it in all_items], dtype=np.int64)
+        if len(idx):
+            item_hist_emb[i] = E[idx].mean(axis=0)
     sim = item_hist_emb @ E.T
     pop = np.bincount(y[:n_tr], minlength=len(all_items)).astype(float)
     pop_order = np.argsort(-pop)
@@ -70,7 +71,7 @@ def main(n_users: int = 25000, max_history: int = 10, min_hist: int = 5, n_cand:
     cand_res = {"cand_recall@10": 0.0, "cand_recall@20": 0.0, "cand_mrr@20": 0.0}
     for i in range(n_users):
         c = cands[i]
-        scores = head.predict_scores(H[i : i + 1], E[c])
+        scores = head.predict_scores(H[i : i + 1], E[c], item_idx=c)
         order = c[np.argsort(-scores[0])]
         pos = np.where(order == y[i])[0]
         if len(pos) == 0:

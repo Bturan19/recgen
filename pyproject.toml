@@ -16,6 +16,7 @@ dependencies = [
     "accelerate>=1.14.0",
     "datasets>=5.0.1",
     "fastapi>=0.141.1",
+    "implicit>=0.7.3",
     "lightgbm>=4.7.0",
     "peft>=0.20.0",
     "polars>=1.43.2",
@@ -24,6 +25,7 @@ dependencies = [
     "torch>=2.13.0",
     "transformers>=5.14.1",
     "uvicorn>=0.52.1",
+    "wandb>=0.28.1",
     "xgboost>=3.4.0",
 ]
 

@@ -96,10 +96,11 @@ class CatalogRankingHead(_BaseHead):
         logits = self._logits(H, E)
         return torch.nn.functional.cross_entropy(logits, y)
 
-    def _logits(self, H, E):
+    def _logits(self, H, E, item_idx=None):
         h = self.proj_(H)
         logits = self.temp_ * (h @ E.T)
-        logits = logits + self.item_bias_.unsqueeze(0)
+        bias = self.item_bias_ if item_idx is None else self.item_bias_[item_idx]
+        logits = logits + bias.unsqueeze(0)
         return logits
 
     def _mrr(self, H, y, E):
@@ -108,7 +109,7 @@ class CatalogRankingHead(_BaseHead):
         pos = (ranks == y.unsqueeze(1)).nonzero(as_tuple=True)[1] + 1
         return float(torch.mean(1.0 / pos))
 
-    def predict_scores(self, H, E=None) -> np.ndarray:
+    def predict_scores(self, H, E=None, item_idx=None) -> np.ndarray:
         E = E if E is not None else self.E_
         if isinstance(H, torch.Tensor):
             Ht = H.float()
@@ -119,7 +120,7 @@ class CatalogRankingHead(_BaseHead):
         else:
             Et = torch.from_numpy(np.asarray(E, dtype=np.float32)).to(self.device)
         with torch.no_grad():
-            return self._logits(Ht, Et).cpu().numpy()
+            return self._logits(Ht, Et, item_idx=item_idx).cpu().numpy()
 
     def evaluate(self, H, y, E=None, ks=(10, 20)):
         scores = self.predict_scores(H, E)

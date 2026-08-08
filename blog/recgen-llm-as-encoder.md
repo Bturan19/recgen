@@ -66,18 +66,22 @@ to pretend otherwise.
 
 ### E-commerce next-item recommendation — the home turf
 
-Amazon Musical Instruments, next-item prediction over a 6,941-item catalog:
+Amazon Musical Instruments, next-item prediction, 25k users / 13,524-item
+catalog (history = last 10 purchases incl. ratings):
 
 | model | recall@10 | recall@20 | mrr@20 |
 |---|---|---|---|
-| **recgen ranker** | **0.028** | **0.044** | **0.0162** |
-| popularity | 0.022 | 0.035 | 0.0113 |
-| ALS (32 factors) | 0.003 | 0.004 | 0.0024 |
+| **recgen 2-stage (popularity + emb-kNN candidates → head)** | **0.342** | **0.500** | **0.160** |
+| recgen full-catalog | 0.026 | 0.038 | 0.014 |
+| popularity | 0.024 | 0.032 | 0.011 |
+| ALS (64 factors) | 0.001 | 0.002 | 0.001 |
 
-The ranking head — trained in **5 seconds** on frozen embeddings — beats
-popularity by ~25% relative MRR and ALS by ~7x. Purchase histories and item
-metadata (title, store, categories, features) live in one shared semantic
-space. No collaborative feature engineering. No user/item ID embeddings.
+The ranking head — trained in **~15 seconds** on frozen embeddings — beats
+popularity by ~13x and ALS by ~33x at recall@10, with zero feature
+engineering. Purchase histories and item metadata (title, store, categories,
+features) live in one shared semantic space. The 2-stage deployment shape
+(popularity ∪ embedding-kNN candidate set, then head ranking — the way GenRec
+would actually be served) reaches **34% recall@10 / 50% recall@20**.
 
 ## What we learned the hard way
 
