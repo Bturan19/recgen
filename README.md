@@ -75,6 +75,15 @@ head.fit(H_users, y_next_item, E_items)      # frozen LLM embeddings in, dot-pro
 head.evaluate(H_test, y_test)                # recall@k, mrr@20 over the full catalog
 ```
 
+## Quickstart example
+
+```bash
+uv run python examples/quickstart_ranking.py
+```
+
+Takes a 26-item catalog CSV, encodes it once (cached), and ranks it against a
+purchase history — the whole onboarding flow in one file.
+
 ## Experiments
 
 ```bash

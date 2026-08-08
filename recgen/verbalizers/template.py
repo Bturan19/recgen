@@ -30,8 +30,14 @@ class TemplateVerbalizer(Verbalizer):
         return self
 
     def transform(self, X) -> list[str]:
-        if isinstance(X, (pd.DataFrame, pl.DataFrame)):
+        if isinstance(X, pd.DataFrame):
             return [self._row_text(row) for _, row in X.iterrows()]
+        if isinstance(X, pl.DataFrame):
+            cols = X.columns
+            return [
+                self._row_text(dict(zip(cols, row)))
+                for row in X.iter_rows()
+            ]
         return list(X)
 
     def _row_text(self, row) -> str:
