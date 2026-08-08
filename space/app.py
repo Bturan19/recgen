@@ -5,7 +5,10 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL = "HuggingFaceTB/SmolLM2-360M"
+MODEL = os.environ.get("RECGEN_MODEL_DIR", "HuggingFaceTB/SmolLM2-360M")
+DEVICE = os.environ.get("RECGEN_DEMO_DEVICE", "mps")
+if DEVICE == "mps" and not torch.backends.mps.is_available():
+    DEVICE = "cpu"
 
 GUITAR_ITEMS = [
     "Fender Player Stratocaster Electric Guitar (Sunburst)",
@@ -29,9 +32,9 @@ def load():
         tokens = AutoTokenizer.from_pretrained(MODEL)
         if tokens.pad_token is None:
             tokens.pad_token = tokens.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL, dtype=torch.float32, torch_dtype=torch.float32
-        ).eval()
+        dtype = torch.float16 if DEVICE == "mps" else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(MODEL, dtype=dtype, torch_dtype=dtype).to(DEVICE).eval()
+        model.config.use_cache = False
 
 
 def embed(texts):
