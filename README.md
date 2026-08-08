@@ -1,35 +1,52 @@
-# recgen
+<p align="center">
+  <h1 align="center">recgen</h1>
+  <p align="center"><b>LLMs are cheap when you stop generating.</b></p>
+  <p align="center">Verbalize any instance as text -> encode with a small LLM -> train a lightweight head for classification, regression, or ranking.</p>
+</p>
 
-A generic "LLM-as-encoder" framework: verbalize any instance as text, encode it
-with a small frozen/adapted LLM, and train a lightweight head for
-classification, regression, or ranking. Inspired by Netflix's GenRec
-(prefill-only LLM recommendation via a pooled hidden state + task head).
-
-## Idea
+Inspired by Netflix's [GenRec](https://netflixtechblog.com/genrec-towards-llm-native-recommendation-at-netflix-f20be6f643e3)
+(prefill-only LLM recommendation via a pooled hidden state + catalog-aware
+head), `recgen` generalizes the "LLM-as-encoder" idea to any prediction task.
 
 ```
-raw instance (row / history / text)
-   -> verbalizer (template config)          # "context engineering"
-   -> small LLM (frozen or LoRA-adapted)     # the "preference encoder"
-   -> pooled hidden state h (last / mean)
-   -> lightweight head                       # ClassifierHead / RegressionHead
+instance (row / history / text)
+  -> verbalizer (template config)          # context engineering, not feature engineering
+  -> small LLM (frozen)                    # SmolLM2-360M / Qwen / any HF model
+  -> pooled hidden state h (mean/last)     # 960-dim semantic embedding
+  -> lightweight head                      # ClassifierHead / RegressionHead / CatalogRankingHead
 ```
 
-The LLM is never decoded at inference: one forward pass, one pooling op, one
-MLP. Cost scales with context length, not generation.
+No autoregressive decoding at inference. One forward pass, one pooling op, one
+small MLP. Cost scales with context length, not generation. Embeddings are
+content-addressed and cached, so re-training heads costs seconds.
 
-## Setup
+## Highlights
+
+- **IMDB sentiment** (12k reviews): recgen 0.914 acc / 0.971 auc vs
+  TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
+  360M model.
+- **E-commerce next-item rec** (Amazon Musical Instruments, 6.9k items):
+  ranking head trained in 5s beats popularity (+25% MRR) and ALS (~7x) with
+  zero feature engineering.
+- **Adult income**: 0.848/0.905 vs LightGBM 0.862/0.922 — within 1.5pts,
+  no feature engineering.
+- Honest limits: pure-numeric regression (house prices) still belongs to GBDT.
+
+Full numbers and analysis: [blog post](blog/recgen-llm-as-encoder.md) and
+[notes/poc_report.md](notes/poc_report.md).
+
+## Install
 
 ```bash
-uv sync                      # install deps (torch, transformers, lightgbm, ...)
+uv sync                          # python 3.12 env with all deps
 uv run hf download HuggingFaceTB/SmolLM2-360M --local-dir models/SmolLM2-360M
+uv run pytest tests/ -q          # sanity checks (CPU, no model needed)
 ```
 
-macOS note: set `OMP_NUM_THREADS=1` (and `KMP_DUPLICATE_LIB_OK=TRUE`) before
-running anything that mixes pyarrow/LightGBM/torch — libomp worker threads can
-segfault model loading otherwise.
+macOS note: export `OMP_NUM_THREADS=1 KMP_DUPLICATE_LIB_OK=TRUE` before
+running anything that mixes pyarrow/LightGBM/torch.
 
-## Usage
+## Quickstart
 
 ```python
 from recgen import FrozenEncoder, RecgenPipeline, TemplateVerbalizer
@@ -40,61 +57,54 @@ verbalizer = TemplateVerbalizer(
 )
 encoder = FrozenEncoder("models/SmolLM2-360M", pooling="mean", batch_size=32)
 pipe = RecgenPipeline(encoder, verbalizer, head="classifier", cache_dir=".cache/my_task")
-pipe.fit(X, y)          # X: DataFrame or list[str]
+
+pipe.fit(X, y)                    # X: DataFrame or list[str]
 pipe.predict(X_test)
-pipe.transform(X_test)  # -> (n, 960) embeddings, for stacking/GBDT pipelines
+pipe.transform(X_test)            # -> (n, 960) embeddings, for stacking/GBDT pipelines
 ```
 
-Embeddings are cached (sha256-keyed) so re-runs are instant; the head trains in
-seconds once the cache is warm.
+Ranking (GenRec-style catalog-aware head):
 
-## Experiments (POC)
+```python
+from recgen import CatalogRankingHead
 
-| task | model | metric | value |
-|---|---|---|---|
-| adult | LightGBM raw | acc / auc | 0.862 / 0.922 |
-| adult | LLM-head (last) | acc / auc | 0.842 / 0.899 |
-| adult | LLM-head (mean) | acc / auc | 0.848 / 0.905 |
-| adult | LightGBM on h | acc / auc | 0.832 / 0.887 |
-| adult | LightGBM h+raw | acc / auc | 0.859 / 0.917 |
-| house prices | LightGBM raw | mae / rmse (log) | 0.087 / 0.126 |
-| house prices | LLM-head | mae / rmse (log) | 0.340 / 0.445 |
-| imdb (15k) | TF-IDF + LogReg | acc / auc | 0.890 / 0.957 |
-| imdb | LLM-head (mean) | acc / auc | **0.914** / **0.971** |
-| imdb | LLM-head (last) | acc / auc | 0.884 / 0.955 |
-| imdb | LightGBM on h (mean) | acc / auc | 0.895 / 0.965 |
-| adult (4k) | head-only MLP | acc / auc | 0.831 / 0.885 |
-| adult (4k) | LoRA r8 + head (joint) | acc / auc | 0.812 / 0.884 |
-| ecom next-item | recgen ranker | rec@10 / mrr@20 | **0.028** / **0.016** |
-| ecom next-item | popularity | rec@10 / mrr@20 | 0.022 / 0.011 |
-| ecom next-item | ALS (32f) | rec@10 / mrr@20 | 0.003 / 0.002 |
+head = CatalogRankingHead(dim=960)
+head.fit(H_users, y_next_item, E_items)      # frozen LLM embeddings in, dot-product out
+head.evaluate(H_test, y_test)                # recall@k, mrr@20 over the full catalog
+```
 
-E-commerce pilot (Amazon Musical Instruments, 6.9k-item catalog, next-item
-prediction): histories + item metadata verbalized and encoded by the frozen
-360M model; a GenRec-style catalog-aware head `score = <W h_u, e_i> + b_i`
-trained in ~5s beats popularity and ALS with zero feature engineering.
-
-Preliminary read: the frozen LLM encoder is a few points behind GBDT on
-pure-numeric tabular (expected — see TabLLM) but **beats TF-IDF + logistic
-regression on text classification with mean pooling (0.914 vs 0.890 acc)**.
-The interesting regime: text-heavy data, cold-start, semantically meaningful
-features — plus the workflow wins (no feature engineering, cacheable
-embeddings, prefill-only inference).
+## Experiments
 
 ```bash
-scripts/run_all.sh          # runs all three experiments
+scripts/run_all.sh                # adult + house prices + imdb
+uv run python experiments/ecommerce/train_rank.py --n-users 25000
 uv run python scripts/summarize.py
 ```
 
-## Structure
+Results land in `experiments/results/results.csv`.
+
+## Serving product (`api/`)
+
+FastAPI service exposing `POST /v1/encode` and `POST /v1/rank` with
+content-addressed caching — the "embeddings as a service" shape:
+
+```bash
+uv add fastapi uvicorn
+uv run uvicorn api.app:app --port 8000
+```
+
+See [api/README.md](api/README.md).
+
+## Repo layout
 
 ```
-recgen/
-  verbalizers/template.py   # TemplateVerbalizer
-  encoder.py                # FrozenEncoder (MPS/CPU, pooling, batching)
-  heads.py                  # ClassificationHead / RegressionHead (torch MLP)
-  pipeline.py               # RecgenPipeline (sklearn-style fit/predict/transform)
-  cache.py                  # sha256-keyed embedding cache
-experiments/                # adult.py, house_prices.py, imdb.py + results/
-notes/research.md           # GenRec/GenZ/TabLLM notes and lessons
+recgen/        encoder, heads, ranking head, verbalizers, pipeline, cache, LoRA trainer
+experiments/   adult, house_prices, imdb, adult_lora, e-commerce next-item rec
+api/           FastAPI service + Dockerfile
+blog/          write-ups
+notes/         research notes (GenRec, GenZ, TabLLM, From Logs to Language)
 ```
+
+## License
+
+MIT. The core is free and open; the hosted service is the business.

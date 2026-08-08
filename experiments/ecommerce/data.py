@@ -48,16 +48,23 @@ def build_splits(reviews: pl.DataFrame, max_history: int = 15):
         test_item = rows[-1]["item_id"]
         history = rows[:-1][-max_history:]
         if len(history) >= 5:
-            train.append((uid, [h["item_id"] for h in history], test_item))
+            train.append((uid, [(h["item_id"], h["rating"]) for h in history], test_item))
     return train
 
 
-def verbalize_history(history_items: list[str], meta: pl.DataFrame) -> str:
-    m = meta.filter(pl.col("item_id").is_in(history_items))
+def verbalize_history(history_items: list, meta: pl.DataFrame) -> str:
+    item_ids = [i for i, _ in history_items]
+    m = meta.filter(pl.col("item_id").is_in(item_ids)).to_dicts()
+    by_id = {r["item_id"]: r for r in m}
     parts = []
-    for r in m.sort("item_id").to_dicts():
+    for item_id, rating in history_items:
+        r = by_id.get(item_id)
+        if r is None:
+            parts.append(item_id)
+            continue
         brand = f" by {r['store']}" if r.get("store") else ""
-        parts.append(f"{r['title']}{brand}")
+        rat = f" (rated {rating}/5)" if rating is not None else ""
+        parts.append(f"{r['title']}{brand}{rat}")
     return "The user recently purchased: " + " | ".join(parts)
 
 

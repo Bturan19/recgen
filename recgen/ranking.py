@@ -121,7 +121,7 @@ class CatalogRankingHead(_BaseHead):
         with torch.no_grad():
             return self._logits(Ht, Et).cpu().numpy()
 
-    def evaluate(self, H, y, ks=(10, 20), E=None):
+    def evaluate(self, H, y, E=None, ks=(10, 20)):
         scores = self.predict_scores(H, E)
         order = np.argsort(-scores, axis=1)
         ranks = np.zeros(len(y), dtype=int)
