@@ -1,4 +1,5 @@
 from typing import Optional
+import numpy as np
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -35,6 +36,12 @@ class RankRequest(BaseModel):
     top_k: int = 10
 
 
+class RankAllRequest(BaseModel):
+    context: str
+    catalog: list[str]
+    top_k: int = 10
+
+
 class RankItem(BaseModel):
     item: str
     score: float
@@ -67,4 +74,15 @@ def rank(req: RankRequest):
     if not req.items or len(req.items) > 1000:
         raise HTTPException(status_code=400, detail="items must be 1..1000 entries")
     ranking = service.rank(req.context, req.items, head_key=req.head, top_k=req.top_k)
+    return {"ranking": [RankItem(**r) for r in ranking]}
+
+
+@app.post("/v1/rank_all", response_model=RankResponse)
+def rank_all(req: RankAllRequest):
+    """Multi-output scoring: one encode + one matmul emits scores for the
+    entire catalog (GenRec-style prefill-only serving)."""
+    if not req.catalog or len(req.catalog) > 100000:
+        raise HTTPException(status_code=400, detail="catalog must be 1..100000 entries")
+    embs = service.encode(req.catalog, cache_key="catalog_default")
+    ranking = service.rank_catalog(req.context, req.catalog, np.asarray(embs), top_k=req.top_k)
     return {"ranking": [RankItem(**r) for r in ranking]}

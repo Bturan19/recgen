@@ -68,6 +68,18 @@ class EncoderService:
             for i in order[:top_k]
         ]
 
+    def rank_catalog(self, context: str, catalog_items: list[str], cached_embs: np.ndarray, top_k: int = 10):
+        """GenRec-style multi-output scoring: ONE forward pass on the context,
+        then a single matmul emits scores for the entire catalog at once."""
+        enc = self._get_encoder()
+        ctx_emb = np.asarray(self.encode([context]))[0]
+        scores = ctx_emb @ cached_embs.T
+        order = np.argsort(-scores)[::-1]
+        return [
+            {"item": catalog_items[i], "score": float(scores[i])}
+            for i in order[:top_k]
+        ]
+
     def status(self) -> dict:
         return {
             "model": config.MODEL_DIR,

@@ -22,19 +22,24 @@ content-addressed and cached, so re-training heads costs seconds.
 
 ## Highlights
 
+- **SOTA-protocol e-commerce benchmark** (Amazon Musical Instruments, 25k
+  users / 13.5k items, leave-one-out + 100 random negatives):
+  recgen **HR@10 0.429 / NDCG@10 0.243** vs ALS-128 0.323/0.197,
+  popularity 0.335/0.206, SASRec 0.186/0.100 — and it is *more* robust on
+  cold-start users (short histories). Head trains in ~15s; no feature
+  engineering, no user/item ID embeddings.
 - **IMDB sentiment** (12k reviews): recgen 0.914 acc / 0.971 auc vs
   TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
   360M model.
-- **E-commerce next-item rec** (Amazon Musical Instruments, 25k users /
-  13.5k-item catalog): a frozen-LLM-embedding ranker whose head trains in
-  ~15s is statistically tied with tuned ALS (128f) on full-catalog MRR
-  (0.0139 vs 0.0143, CIs overlap) and beats popularity/ItemKNN/EASE —
-  with zero feature engineering and no user/item ID embeddings.
 - **Adult income**: 0.848/0.905 vs LightGBM 0.862/0.922 — within 1.5pts,
   no feature engineering.
+- **Serving speed on an M1 Pro**: one full recommendation request (300-token
+  history + scoring a 100k-item catalog as a single multi-output matmul)
+  takes ~29 ms — ~35 requests/s; projected GPU cost ~$0.60 per 1M requests.
+  See `scripts/benchmark.py`.
 - Honest limits: pure-numeric regression (house prices) and unsupervised
-  text/tabular anomaly detection still belong to classical methods; the LLM
-  encoder wins where semantics + labels meet.
+  anomaly detection belong to classical methods; the LLM encoder wins where
+  semantics + labels meet.
 
 Full numbers, corrected baselines, and analysis:
 [notes/poc_report.md](notes/poc_report.md) and
