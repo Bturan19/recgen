@@ -117,3 +117,18 @@ class RegressionHead(_BaseHead, RegressorMixin):
 
     def predict(self, X):
         return self._predict_tensor(X).cpu().numpy().ravel()
+
+
+class MultiLabelHead(_BaseHead):
+    """Independent binary predictions per label (sigmoid + BCE)."""
+
+    def fit(self, X, y):
+        self.n_labels_ = np.asarray(y).shape[1]
+        self._fit_nn(X, np.asarray(y, dtype=np.float32), nn.BCEWithLogitsLoss(), self.n_labels_)
+        return self
+
+    def predict_proba(self, X):
+        return torch.sigmoid(self._predict_tensor(X)).cpu().numpy()
+
+    def predict(self, X, threshold: float = 0.5):
+        return (self.predict_proba(X) >= threshold).astype(int)

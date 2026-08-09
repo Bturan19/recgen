@@ -11,3 +11,4 @@ wandb/
 recgen.egg-info/
 checkpoints/
 .github/
+docs/product.md

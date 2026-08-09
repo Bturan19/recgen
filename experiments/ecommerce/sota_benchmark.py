@@ -147,14 +147,14 @@ def hr_ndcg(scores_pos, scores_neg):
 
 
 def main():
-    reviews, meta = prep_data()
-    splits = build_splits(reviews, max_history=MAX_LEN)
-    splits = [s for s in splits if len(s[1]) >= 5]
-    rng = np.random.default_rng(SEED)
-    perm = rng.permutation(len(splits))
-    splits = [splits[i] for i in perm[:N_USERS]]
-    n_tr = int(N_USERS * 0.8)
-    n_va = int(N_USERS * 0.1)
+    from leakfree import load_splits, leak_mask, split_sets
+    splits, meta = load_splits(min_hist=5, max_history=MAX_LEN, n_users=N_USERS, seed=SEED)
+    mask = leak_mask(splits)
+    n_leaked = int(mask.sum())
+    splits = [s for s, m in zip(splits, mask) if not m]
+    print(f"leakage filter: removed {n_leaked}/{N_USERS} users (test item in history); remaining {len(splits)}")
+    n_tr = int(len(splits) * 0.8)
+    n_va = int(len(splits) * 0.1)
     train, val, test = splits[:n_tr], splits[n_tr : n_tr + n_va], splits[n_tr + n_va :]
     all_items = sorted({it for _, _, it in splits})
     cat_idx = {i: j for j, i in enumerate(all_items)}
@@ -168,8 +168,8 @@ def main():
         negs[j] = np.random.default_rng(SEED + j).choice(pool, N_NEG, replace=False)
 
     encoder = FrozenEncoder(MODEL_DIR, pooling="mean", batch_size=32, max_length=512)
-    H = encoder.encode_cached([f"{INSTRUCTION_HIST}\n{verbalize_history(h, meta)}" for _, h, _ in splits], f"{CACHE_DIR}/user_emb.npy")
     E = encoder.encode_cached([verbalize_item(i, meta) for i in all_items], f"{CACHE_DIR}/item_emb.npy")
+    H = encoder.encode_cached([f"{INSTRUCTION_HIST}\n{verbalize_history(h, meta)}" for _, h, _ in splits], f"{CACHE_DIR}/user_emb_noleak.npy")
     H_te = H[n_tr + n_va :]
 
     head = CatalogRankingHead(dim=H.shape[1], epochs=30, batch_size=256, patience=5)

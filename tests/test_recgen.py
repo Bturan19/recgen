@@ -56,3 +56,15 @@ def test_embedding_cache_roundtrip(tmp_path):
     loaded = cache.load(texts)
     assert loaded.shape == (2, 3)
     assert cache.load(["other"]) is None
+
+
+def test_multilabel_head():
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(400, 8))
+    Y = np.stack([(X[:, 0] > 0).astype(int), (X[:, 1] > 0).astype(int), (X[:, 0] + X[:, 1] > 0).astype(int)], axis=1)
+    from recgen import MultiLabelHead
+    head = MultiLabelHead(epochs=30, hidden=(64, 32))
+    head.fit(X[:320], Y[:320])
+    pred = head.predict(X[320:])
+    acc = (pred == Y[320:]).mean()
+    assert acc > 0.85
