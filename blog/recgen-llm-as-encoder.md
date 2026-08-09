@@ -66,23 +66,25 @@ to pretend otherwise.
 
 ### E-commerce next-item recommendation — the defensible benchmark
 
-Amazon Musical Instruments, 25k users / 13,524-item catalog. Standard
-RecBole-style protocol: leave-one-out (last purchase), rank over the positive
-+ 100 random negatives, HR@10 / NDCG@10. Identical candidates for every model.
+Amazon Musical Instruments, 23,866 users after leakage audit / 13,137-item
+catalog. Standard RecBole-style protocol: leave-one-out (last purchase), rank
+over the positive + 100 random negatives, HR@10 / NDCG@10. Identical
+candidates for every model. Users whose held-out item also appears in their
+history (repeat purchases, ~4.5%) are excluded — otherwise the answer is in
+the input.
 
 | model | HR@10 | NDCG@10 |
 |---|---|---|
-| **recgen (frozen 360M + catalog head, ~15s train)** | **0.429** | **0.243** |
-| ALS (128 factors, fair protocol) | 0.323 | 0.197 |
-| popularity | 0.335 | 0.206 |
-| SASRec (128-dim self-attention, ours) | 0.186 | 0.100 |
+| **recgen (frozen 360M + catalog head, ~15s train)** | **0.418** | **0.237** |
+| popularity | 0.327 | 0.201 |
+| ALS (128 factors, fair protocol) | 0.296 | 0.170 |
+| SASRec (128-dim self-attention, ours) | 0.120 | 0.058 |
 
-recgen beats a tuned-class MF recommender by 33% relative HR@10 and a
-self-attention sequential model by 2.3x — with zero feature engineering, no
+recgen beats a tuned-class MF recommender by 41% relative HR@10 and a
+self-attention sequential model by ~3.5x — with zero feature engineering, no
 user/item ID embeddings, and a head that trains in seconds. On cold-start
-users (≤7 history items) recgen holds at HR@10 0.434 while ALS drops to
-0.353 — the frozen LLM *is* the user representation, so sparse users don't
-starve it.
+users (≤7 history items) recgen holds at HR@10 0.424 vs ALS 0.319 — the
+frozen LLM *is* the user representation, so sparse users don't starve it.
 
 Caveats we report alongside: SASRec is a vanilla implementation (not
 grid-searched); this dataset is sparse, which favors our approach. Full

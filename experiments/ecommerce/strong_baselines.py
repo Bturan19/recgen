@@ -37,7 +37,8 @@ def main():
     mask = leak_mask(splits)
     splits = [s for s, m in zip(splits, mask) if not m]
     print(f"leakage filter: removed {int(mask.sum())}/{N_USERS} users; remaining {len(splits)}")
-    n_tr = int(len(splits) * 0.8)
+    n_all = len(splits)
+    n_tr = int(n_all * 0.8)
     n_va = int(len(splits) * 0.1)
     train, val, test = splits[:n_tr], splits[n_tr : n_tr + n_va], splits[n_tr + n_va :]
     all_items = sorted({it for _, _, it in splits})
@@ -63,10 +64,10 @@ def main():
             rows.append(j)
             cols.append(iidx[it])
             data.append(1.0)
-    mat = csr_matrix((data, (rows, cols)), shape=(N_USERS, len(train_items)))
+    mat = csr_matrix((data, (rows, cols)), shape=(n_all, len(train_items)))
     print(f"matrix (all users' pre-test history): {mat.shape}")
 
-    last_item_embs = np.zeros((N_USERS, E.shape[1]))
+    last_item_embs = np.zeros((n_all, E.shape[1]))
     for j, (u, hist, _) in enumerate(splits):
         last = hist[-1][0]
         if last in cat_idx:
@@ -159,7 +160,7 @@ def main():
         print(f"ItemKNN failed: {e}")
 
     try:
-        Xc = np.zeros((N_USERS, len(all_items)))
+        Xc = np.zeros((n_all, len(all_items)))
         for it, j in cat_idx.items():
             if it in iidx:
                 Xc[:, j] = mat[:, iidx[it]].toarray().ravel()
@@ -177,14 +178,14 @@ def main():
     except Exception as e:
         print(f"EASE failed: {e}")
 
-    mean_hist_embs = np.zeros((N_USERS, E.shape[1]))
+    mean_hist_embs = np.zeros((n_all, E.shape[1]))
     for j, (u, hist, _) in enumerate(splits):
         idx = np.array([cat_idx[it] for it, _ in hist if it in cat_idx], dtype=np.int64)
         if len(idx):
             mean_hist_embs[j] = E[idx].mean(axis=0)
     sim = mean_hist_embs @ E.T
     cands = []
-    for i in range(N_USERS):
+    for i in range(n_all):
         sim_ord = np.argsort(-sim[i])
         union = set(pop_order[: N_CAND // 3])
         union.update(sim_ord[: N_CAND - len(union)])

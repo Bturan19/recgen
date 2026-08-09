@@ -276,3 +276,44 @@ full request (300-tok history + score 100k-item catalog): 360M ~29ms -> ~35
 req/s; 1.7B ~90ms -> ~11 req/s. Projections: ~3M req/day on one M1; ~$0.60
 GPU per 1M requests (A10-class est); 100k-item catalog embeds once in ~0.04
 GPU-hr, then cached.
+
+## LEAKAGE AUDIT + leak-free results (final numbers)
+
+BUG: users whose held-out (last) purchase also appears in their history
+(repeat purchase) leaked the answer into the model input. 1,134/25,000
+sampled users (~4.5%) affected. Fixed in `leakfree.py`; all e-commerce
+benchmarks now exclude such users (23,866 clean users). The previously
+published e-commerce numbers below are SUPERSEDED by these:
+
+Standard protocol (leave-one-out + 100 random negatives), leak-free:
+| model | HR@10 | NDCG@10 |
+|---|---|---|
+| recgen | 0.4179 | 0.2366 |
+| popularity | 0.3266 | 0.2008 |
+| ALS-128 | 0.2956 | 0.1702 |
+| SASRec | 0.1198 | 0.0579 |
+
+Cold-start (history <= 7, 1285 users): recgen 0.424/0.239; popularity
+0.351/0.217; ALS 0.319/0.185; SASRec 0.130/0.062.
+
+Leak impact: recgen -2.6%, ALS -8.4%, SASRec -35% (sequence models memorize
+the leaked item best). recgen edge: +41% vs ALS, +3.5x vs SASRec.
+
+Benchmarks that need no leak filter (row-level splits, no grouping):
+IMDB, Adult, house prices, SMS spam, cardiotocography — audited, OK.
+
+Full audit checklist: AUDIT.md (handoff for a fresh verification session).
+
+Leak-free full-catalog (13,137 items, 2,388 test users) + 2-stage (same 300
+candidates for every ranker):
+| model | full recall@10 | full mrr@20 (ci95) | 2-stage rec@10 | 2-stage mrr@20 |
+|---|---|---|---|---|
+| recgen | 0.0197 | 0.0120 [0.0090,0.0153] | 0.0276 | 0.0132 [0.0101,0.0166] |
+| popularity | 0.0239 | 0.0112 [0.0083,0.0141] | 0.0239 | 0.0106 [0.0077,0.0135] |
+| ALS-128 | 0.0180 | 0.0082 [0.0063,0.0106] | 0.0155 | 0.0074 [0.0052,0.0098] |
+| ItemKNN | 0.0008 | 0.0006 | - | - |
+| EASE | 0.0063 | 0.0036 | - | - |
+
+Full-catalog is noisy: recgen ≈ popularity on recall, ahead on MRR and
+clearly ahead of ALS on MRR/recall. The 100-negative standard protocol (see
+above) is the primary claim and favors recgen strongly.

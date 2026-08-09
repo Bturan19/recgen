@@ -22,12 +22,12 @@ content-addressed and cached, so re-training heads costs seconds.
 
 ## Highlights
 
-- **SOTA-protocol e-commerce benchmark** (Amazon Musical Instruments, 25k
-  users / 13.5k items, leave-one-out + 100 random negatives):
-  recgen **HR@10 0.429 / NDCG@10 0.243** vs ALS-128 0.323/0.197,
-  popularity 0.335/0.206, SASRec 0.186/0.100 — and it is *more* robust on
-  cold-start users (short histories). Head trains in ~15s; no feature
-  engineering, no user/item ID embeddings.
+- **E-commerce benchmark, leakage-audited** (Amazon Musical Instruments,
+  23.9k clean users / 13.1k items, leave-one-out + 100 random negatives,
+  repeat-purchase users excluded): recgen **HR@10 0.418 / NDCG@10 0.237**
+  vs ALS-128 0.296/0.170, popularity 0.327/0.201, SASRec 0.120/0.058 — and
+  it is *more* robust on cold-start users (HR@10 0.424). Head trains in
+  ~15s; no feature engineering, no user/item ID embeddings.
 - **IMDB sentiment** (12k reviews): recgen 0.914 acc / 0.971 auc vs
   TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
   360M model.
