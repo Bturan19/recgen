@@ -11,6 +11,29 @@ from .cache import EmbeddingCache
 POOLINGS = ("last", "mean")
 
 
+def pool_hidden(hidden, attn, pooling: str) -> torch.Tensor:
+    """Pool a hidden-state batch to one vector per row.
+
+    - "mean": masked mean over attended (non-pad) tokens
+    - "last": hidden state of the last non-pad token
+    """
+    if pooling == "last":
+        seq_lens = attn.sum(dim=1).long()
+        idx = torch.arange(hidden.shape[0], device=hidden.device)
+        return hidden[idx, seq_lens - 1]
+    return (hidden * attn.unsqueeze(-1)).sum(dim=1) / attn.sum(dim=1, keepdim=True)
+
+
+def sanitize(H: np.ndarray) -> np.ndarray:
+    """Zero non-finite elements (MPS fp16 instability); report affected rows."""
+    n_bad = int((~np.isfinite(H)).any(axis=1).sum())
+    if n_bad:
+        print(f"[FrozenEncoder] WARNING: {n_bad}/{len(H)} rows had non-finite values; zeroed them")
+        H = H.copy()
+        H[~np.isfinite(H)] = 0.0
+    return H
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -54,14 +77,7 @@ class FrozenEncoder:
                 out = self.model(**ids, output_hidden_states=True)
             hidden = out.hidden_states[-1].float()
             attn = ids["attention_mask"]
-            if self.pooling == "last":
-                seq_lens = attn.sum(dim=1).long()
-                idx = torch.arange(hidden.shape[0], device=hidden.device)
-                h = hidden[idx, seq_lens - 1]
-            else:
-                h = (hidden * attn.unsqueeze(-1)).sum(dim=1) / attn.sum(
-                    dim=1, keepdim=True
-                )
+            h = pool_hidden(hidden, attn, self.pooling)
             all_h.append(h.cpu())
             if progress and (i // self.batch_size) % 10 == 0:
                 print(
@@ -69,10 +85,7 @@ class FrozenEncoder:
                     f"({time.time() - t0:.0f}s elapsed)"
                 )
         H = torch.cat(all_h).numpy().astype(np.float32)
-        n_bad = int((~np.isfinite(H)).any(axis=1).sum())
-        if n_bad:
-            print(f"[FrozenEncoder] WARNING: {n_bad}/{n} rows had non-finite values; zeroed them")
-            H[~np.isfinite(H)] = 0.0
+        H = sanitize(H)
         if progress:
             print(
                 f"[FrozenEncoder] encoded {n} prompts in {time.time() - t0:.0f}s "

@@ -24,16 +24,21 @@ class EncoderService:
         if self._encoder is None:
             self._encoder = FrozenEncoder(
                 config.MODEL_DIR,
+                device=config.DEVICE,
                 pooling=config.POOLING,
                 batch_size=config.BATCH_SIZE,
                 max_length=config.MAX_LENGTH,
             )
         return self._encoder
 
+    def _cache_path(self, cache_key: str) -> str:
+        model_tag = os.path.basename(os.path.normpath(config.MODEL_DIR))
+        return f"{config.CACHE_DIR}/{model_tag}_{config.POOLING}_{cache_key}.npy"
+
     def encode(self, texts: list[str], cache_key: str | None = None) -> list[list[float]]:
         enc = self._get_encoder()
         if cache_key is not None:
-            path = f"{config.CACHE_DIR}/{cache_key}.npy"
+            path = self._cache_path(cache_key)
             cache = EmbeddingCache(path)
             cached = cache.load(texts)
             if cached is not None:
@@ -74,7 +79,7 @@ class EncoderService:
         enc = self._get_encoder()
         ctx_emb = np.asarray(self.encode([context]))[0]
         scores = ctx_emb @ cached_embs.T
-        order = np.argsort(-scores)[::-1]
+        order = np.argsort(-scores)
         return [
             {"item": catalog_items[i], "score": float(scores[i])}
             for i in order[:top_k]

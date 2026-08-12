@@ -51,7 +51,16 @@ training takes seconds.
 | TF-IDF + logistic regression | 0.890 | 0.957 |
 
 IMDB sentiment, 12k training reviews. Mean pooling matters: last-token pooling
-gets 0.884 — a 3-point swing from a pooling choice.
+gets 0.884 — a 3-point swing from a pooling choice. (Leakage audit: 9/3,000
+test reviews have exact-duplicate text in train, all label-consistent —
+affects both models equally.)
+
+### Multi-label classification — beats TF-IDF (new, audited 2026-08-09)
+
+go_emotions (28 emotion labels, 6k rows, ~17% multi-label): a frozen
+360M + MultiLabelHead reaches **0.400 micro-F1** vs TF-IDF + LogReg
+(binary-relevance) 0.376 and LightGBM-on-embeddings 0.258. Same split for
+every method. `experiments/multilabel.py`.
 
 ### Tabular classification — close
 
@@ -66,36 +75,39 @@ to pretend otherwise.
 
 ### E-commerce next-item recommendation — the defensible benchmark
 
-Amazon Musical Instruments, 23,866 users after leakage audit / 13,137-item
+Amazon Musical Instruments, 23,865 users after leakage audit / 13,136-item
 catalog. Standard RecBole-style protocol: leave-one-out (last purchase), rank
 over the positive + 100 random negatives, HR@10 / NDCG@10. Identical
 candidates for every model. Users whose held-out item also appears in their
 history (repeat purchases, ~4.5%) are excluded — otherwise the answer is in
-the input.
+the input — and so is the rare case where a *different* item_id carries the
+same title as the held-out item (1/23,866 users, train only; impact nil).
 
 | model | HR@10 | NDCG@10 |
 |---|---|---|
-| **recgen (frozen 360M + catalog head, ~15s train)** | **0.418** | **0.237** |
-| popularity | 0.327 | 0.201 |
-| ALS (128 factors, fair protocol) | 0.296 | 0.170 |
-| SASRec (128-dim self-attention, ours) | 0.120 | 0.058 |
+| **recgen (frozen 360M + catalog head, ~15s train)** | **0.421** | **0.238** |
+| popularity | 0.333 | 0.203 |
+| ALS (128 factors, fair protocol) | 0.304 | 0.174 |
+| SASRec (128-dim self-attention, ours) | 0.128 | 0.058 |
 
-recgen beats a tuned-class MF recommender by 41% relative HR@10 and a
-self-attention sequential model by ~3.5x — with zero feature engineering, no
+recgen beats a tuned-class MF recommender by ~39% relative HR@10 and a
+self-attention sequential model by ~3.3x — with zero feature engineering, no
 user/item ID embeddings, and a head that trains in seconds. On cold-start
-users (≤7 history items) recgen holds at HR@10 0.424 vs ALS 0.319 — the
-frozen LLM *is* the user representation, so sparse users don't starve it.
+users (≤7 history items) recgen holds at HR@10 0.417 / NDCG@10 0.242 vs
+ALS 0.322/0.189 and SASRec 0.133/0.061 — the frozen LLM *is* the user
+representation, so sparse users don't starve it (note: recgen's cold-start
+rate is ~equal to its overall rate on this dataset, not higher).
 
 Caveats we report alongside: SASRec is a vanilla implementation (not
 grid-searched); this dataset is sparse, which favors our approach. Full
 repro: `experiments/ecommerce/sota_benchmark.py`.
 
-### Serving speed (measured, M1 Pro)
+### Serving speed (measured, M1 Pro, re-audited 2026-08-09)
 
 A full recommendation request — encode a 300-token history once, then score
 the entire 100k-item catalog in a single multi-output matmul (GenRec's
-prefill-only shape) — takes **~29 ms ≈ 35 requests/s** on a laptop. Projected
-GPU cost ~$0.60 per 1M requests; a 100k-item catalog embeds once in ~0.04
+prefill-only shape) — takes **~30 ms ≈ 33 requests/s** on a laptop. Projected
+GPU cost ~$0.63 per 1M requests; a 100k-item catalog embeds once in ~0.04
 GPU-hours and is then cached forever. `scripts/benchmark.py`.
 
 ### Where it fails (honestly)

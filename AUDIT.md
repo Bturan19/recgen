@@ -12,124 +12,104 @@ conclusions — re-derive them.
   downloaded for comparison.
 - Hardware: M1 Pro (32GB), MPS. Env quirk: run everything with
   `OMP_NUM_THREADS=1 KMP_DUPLICATE_LIB_OK=TRUE` (libomp segfaults otherwise).
-- Claims currently on the README/blog must ALL be re-verified after this
-  audit; update docs if anything changes.
+- **Audit status (2026-08-09): FULL AUDIT COMPLETE.** All sections below
+  were re-derived in `scripts/audit_report.md`. Published numbers in
+  README/blog/notes were updated to the final leak-free (title-aware) run.
 
-## 1. Label leakage (HIGH — was CONFIRMED, partially fixed)
+## 1. Label leakage (HIGH — FIXED and re-verified)
 
-- **Confirmed bug (fixed in the code, numbers pending re-run):** in the
-  e-commerce next-item benchmark, users whose held-out (last) purchase also
-  appears in their history (repeat purchase) leak the answer into the model
-  input — the verbalized history literally names the test item. 1,134/25,000
-  sampled users affected (~4.5%).
-- Fix applied: `experiments/ecommerce/leakfree.py` filters such users before
-  splitting; `sota_benchmark.py` and `strong_baselines.py` were patched to
-  use it and to encode a fresh `user_emb_noleak.npy` cache.
-- **TODO:**
-  1. Re-run `sota_benchmark.py` + `strong_baselines.py` to completion.
-  2. Sanity-check every other benchmark for the same class of bug:
-     - IMDB: reviews are independent; row-level split — OK by construction,
-       but verify no review text duplicates across train/test.
-     - Adult / house prices / cardiotocography: row-level, no grouping — OK.
-     - SMS spam: same-row, no leak — verify.
-  3. Add a `test_leakfree.py` that asserts: no test user's history contains
-     their target; the verbalized history text of any test user does not
-     contain the test item's title; negative candidates exclude positive +
-     history items (already done in code — re-check).
-- Expected impact: all published e-commerce numbers will change; update
-  README/blog/notes with the leak-free figures and add a "leakage audit"
-  line to every results table.
+- Item-id leak (repeat purchase): 1,134/25,000 users (~4.5%) — excluded by
+  `experiments/ecommerce/leakfree.py`.
+- **Title-level leak (found in audit):** a different item_id sharing the
+  held-out item's title also leaks the answer into the verbalized history.
+  1/23,866 users, in train only (impact nil). `leak_mask(splits, meta=meta)`
+  now excludes these too. Final clean set: 23,865 users / 13,136 items /
+  2,387 test users.
+- All other benchmarks audited: IMDB (9/3,000 duplicate texts, all
+  label-consistent), Adult, house prices, SMS, cardiotocography — row-level,
+  OK.
+- Tests: `tests/test_leakfree.py` asserts item-id, title-in-text, negative
+  candidates, split disjointness, and pins the clean count at 23,865.
 
-## 2. Evaluation correctness (HIGH)
+## 2. Evaluation correctness (HIGH — verified)
 
-- `CatalogRankingHead.evaluate` and the sota/strong baseline scripts compute
-  ranks in different ways — audit all of them:
-  - Full-catalog rank: `np.argsort(-scores, axis=1)` then locate target —
-    verify no tie-handling bias, no already-interacted-item masking that
-    differs between models.
-  - 2-stage candidate sets: MUST be identical for every model (they are —
-    re-verify after the leak filter changes the user sample).
-  - Bootstrap CI function samples with replacement over ranks; verify it
-    cannot emit NaN (division guard exists — test it).
-  - SASRec eval: uses scalar indexing now (advanced-indexing bug fixed);
-    verify HR@10 in [0.1-ish, 1] and that val HR is NOT 1.0 (that was the
-    bug symptom).
-- Verify the recgen head's `best_mrr` early stopping uses the same val split
-  definition across runs (it changes when users are filtered).
+- `CatalogRankingHead.evaluate`, `sota_benchmark.hr_ndcg`, and
+  `strong_baselines.full_ranks` all rank via `np.argsort(-scores)` and locate
+  the target; no model-dependent tie/masking differences.
+- 2-stage candidates identical for every ranker (popularity ∪ embedding-kNN,
+  300).
+- Bootstrap CI has a `where=ranks>0` guard; tested for NaN (incl. rank-0).
+- SASRec eval uses scalar indexing; val HR peaked 0.1412 (not 1.0).
+- Head `best_mrr` early-stops on the same internal 90/10 val in both scripts.
 
-## 3. Baselines fairness (HIGH)
+## 3. Baselines fairness (HIGH — verified; state honestly)
 
-- ALS/ItemKNN/EASE are our own implementations; SASRec is a vanilla
-  implementation (128-dim, 2 layers, 3 negatives, 20 epochs, val early-stop).
-  They are NOT grid-searched. State this in any public claim.
-- ALS: trained on all users' pre-test history (fair factors for test users).
-  Re-verify after leak filter (matrix must exclude leaked users).
-- Do NOT claim "SOTA". Claim only "beats our tuned-class baselines (ALS-128,
-  SASRec) under the standard leave-one-out + 100-negative protocol on Amazon
-  Musical Instruments". If the session wants a stronger claim, run official
-  RecBole SASRec/BERT4Rec numbers on the same data+protocol, or cite
-  published numbers for the same dataset (none known for Musical_Instruments
-  — this is also why our claim is not "SOTA").
-- Check the negative-sampling RNG seeds: identical seed per user index used
-  by all models? (yes for SASRec/recgen eval; verify ALS/popularity use the
-  same candidate sets).
+- ALS/ItemKNN/EASE own implementations, SASRec vanilla (128-dim, 2 layers,
+  3 negatives, 20 epochs, val early-stop). NOT grid-searched — state this.
+- ALS trained on all users' pre-test history; matrix excludes leaked users.
+- Do NOT claim "SOTA". Claim only "beats our tuned-class baselines under
+  leave-one-out + 100-negative on Amazon Musical Instruments".
+- Same-seed candidate sets confirmed for all models.
 
-## 4. Framework completeness (MEDIUM)
+## 4. Framework completeness (MEDIUM — done)
 
-- Heads: ClassificationHead, RegressionHead, MultiLabelHead (new — has a
-  unit test only, no real-data benchmark yet), CatalogRankingHead.
-- "Any LLM -> classifier/regressor/ranker, multi-output, multi-label" —
-  verify MultiLabelHead on a real small multi-label dataset (e.g., a HF
-  multi-label text set) to back the claim.
-- LoraHeadTrainer: verify `load()` path reproduces `fit()` results; the
-  Adult LoRA experiment showed no gain at 4k rows — keep that negative
-  documented.
-- Pipeline: `RecgenPipeline.transform/predict` on unseen data must not
-  re-tokenize per call (cache) and must handle polars+pandas (polars support
-  was added — test both).
+- `experiments/multilabel.py` (new): go_emotions multi-label benchmark —
+  recgen micro-F1 0.400 vs TF-IDF 0.376, LightGBM-on-h 0.258. Backs the
+  multi-label claim.
+- `RecgenPipeline` polars+pandas tested (cache hit across fit/transform/
+  predict) — `tests/test_pipeline_audit.py`.
+- `LoraHeadTrainer.load()` fixed: out_dim now derives from `classes.npy`
+  (was hardcoded to 2). Adult LoRA negative (0.812 vs 0.831 head-only) stays
+  documented in notes.
 
-## 5. Model/encoder correctness (MEDIUM)
+## 5. Model/encoder correctness (MEDIUM — verified)
 
-- FrozenEncoder: non-finite pooled values are zeroed with a warning (MPS
-  fp16 instability, 67/5574 SMS rows). Audit: does zeroing rows bias any
-  benchmark? Count zeroed rows per cache and report.
-- Verify pooling correctness: masked mean (divide by attention count), last
-  token = last non-pad. Add unit tests with tiny hand-computed examples.
-- Embedding cache: sha256 of joined texts; verify staleness detection works
-  when texts change (test exists — extend to negative case with same-length
-  different texts).
+- Sanitization is per-element (not whole-row) on encode output; all stored
+  caches scanned — 0 non-finite rows anywhere. No benchmark reads raw data.
+- Pooling extracted to `recgen.encoder.pool_hidden`/`sanitize`; hand-computed
+  unit tests for masked mean and last-non-pad.
+- Cache staleness: sha256 of joined texts; tests cover same-length-different
+  and reordered texts (`tests/test_encoder_audit.py`).
 
-## 6. API/serving correctness (MEDIUM)
+## 6. API/serving correctness (MEDIUM — two bugs fixed)
 
-- `api/app.py`: `/v1/encode`, `/v1/rank`, `/v1/rank_all`, `/health`.
-  - `rank_all` caches catalog embeddings under a FIXED key
-    ("catalog_default") — verify the cache key includes the model/pooling,
-    else switching backends returns stale embeddings. (BUG candidate.)
-  - Verify request-size limits, error codes, and that the model is loaded
-    lazily (first request latency acceptable).
-- Dockerfile: builds? (CPU-only path, `RECGEN_DEVICE=cpu`.)
+- **Fixed:** `rank_catalog` returned ascending (worst-first) rankings
+  (`np.argsort(-scores)[::-1]`). Now descending. Regression-tested.
+- **Fixed:** `rank_all` cache key was a fixed "catalog_default" with no
+  model/pooling — stale embeddings across backend switches. Keys are now
+  `{model}_{pooling}_{key}`. Verified via smoke test + unit tests.
+- `RECGEN_DEVICE` now wired into the encoder constructor (CPU Docker path).
+- Dockerfile: BUILD VERIFIED (image 6.1GB, `/health` OK in container on the
+  CPU path; model files must be mounted/baked in for real requests).
+- Lazy model load confirmed (`/health` dim=null before first encode).
 
-## 7. Repo hygiene / IP (MEDIUM)
+## 7. Repo hygiene / IP (MEDIUM — done)
 
-- `docs/product.md` was REMOVED and purged from git history (moved to
-  `../recgen-private/product.md` — outside repo). Verify: `git log --all --
-  docs/product.md` is empty; remote 404s; no other sensitive files
-  (`.cache/`, `models/`, `data/`, `checkpoints/` are gitignored — verify
-  `.env`/tokens are not committed anywhere; check `git ls-files`).
-- `ROADMAP.md` is the public product-facing doc — keep it non-sensitive.
-- CI workflow exists locally but is NOT pushed (OAuth token lacks `workflow`
-  scope). TODO: run `gh auth refresh -s workflow --hostname github.com`,
-  then commit `.github/workflows/ci.yml` and push.
+- `docs/product.md`: `git log --all` empty (purged); still gitignored.
+- No secrets/tokens in `git ls-files`.
+- **Fixed:** `.github/` removed from `.gitignore` (it silently blocked the CI
+  workflow from ever being committed).
+- TODO (needs user): `gh auth refresh -s workflow --hostname github.com`
+  (token lacks `workflow` scope), then commit `.github/workflows/ci.yml`
+  and push.
 
-## 8. Final deliverables of this audit session
+## 8. Final deliverables — DONE
 
-1. `scripts/audit_report.md` — one page per section above: status, evidence
-   (commands + outputs), fixes applied.
-2. Leak-free headline numbers in README/blog/notes, each with a one-line
-   "audit: leakage-free by construction (see AUDIT.md)" note.
-3. Unit tests added for: leak filter, pooling, cache staleness, CI-safe
-   heads, bootstrap CI.
-4. Push everything; report the diffs to the previous published numbers.
+1. `scripts/audit_report.md` — per-section status, evidence, fixes, final
+   tables with diffs vs previous published numbers.
+2. Leak-free headline numbers in README/blog/notes with "leakage-free by
+   construction (see AUDIT.md)" notes.
+3. Unit tests added: leak filter, pooling, cache staleness, bootstrap CI,
+   API ordering/cache key, pipeline polars+pandas. 25 passed.
+4. Push pending user's `gh auth refresh -s workflow`.
+
+## Final numbers (leak-free, 2026-08-09)
+
+Standard protocol: recgen **HR@10 0.4214 / NDCG@10 0.2375**; popularity
+0.3326/0.2033; ALS-128 0.3037/0.1742; SASRec 0.1282/0.0582. Cold-start:
+recgen 0.4174/0.2422. Full-catalog rec@10 0.0218; 2-stage rec@10 0.0289.
+Claim wording: "~39% vs ALS, ~3.3x vs SASRec" (was 41%/3.5x). Serving:
+30.2ms -> 33.1 req/s, ~$0.63/1M. Multi-label go_emotions: micro-F1 0.400.
 
 ## Commands
 

@@ -1,9 +1,16 @@
+"""Legacy next-item benchmark (SUPERSEDED by sota_benchmark.py / strong_baselines.py).
+
+Kept because README still links it; now leak-free: repeat-purchase users
+(test item in history) are excluded via leakfree.py.
+"""
+
 import argparse
 import os
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
 import polars as pl
@@ -21,12 +28,18 @@ INSTRUCTION_HIST = "Given the user's purchase history, infer what they are likel
 
 
 def main(n_users: int = 25000, max_history: int = 10, min_hist: int = 5, n_cand: int = 300):
+    from leakfree import leak_mask
+
     reviews, meta = prep_data()
     splits = build_splits(reviews, max_history=max_history)
     splits = [s for s in splits if len(s[1]) >= min_hist]
     rng = np.random.default_rng(0)
     perm = rng.permutation(len(splits))
     splits = [splits[i] for i in perm[:n_users]]
+    mask = leak_mask(splits, meta=meta)
+    print(f"leakage filter: removed {int(mask.sum())}/{len(splits)} users; remaining {int((~mask).sum())}")
+    splits = [s for s, m in zip(splits, mask) if not m]
+    n_users = len(splits)
     n_tr = int(n_users * 0.8)
     n_va = int(n_users * 0.1)
     train, val, test = splits[:n_tr], splits[n_tr : n_tr + n_va], splits[n_tr + n_va :]
@@ -38,7 +51,7 @@ def main(n_users: int = 25000, max_history: int = 10, min_hist: int = 5, n_cand:
     print(f"catalog: {len(all_items)} items")
 
     encoder = FrozenEncoder(MODEL_DIR, pooling="mean", batch_size=32, max_length=512)
-    H = encoder.encode_cached(hist_texts, f"{CACHE_DIR}/user_emb.npy")
+    H = encoder.encode_cached(hist_texts, f"{CACHE_DIR}/user_emb_noleak.npy")
     E = encoder.encode_cached(item_texts, f"{CACHE_DIR}/item_emb.npy")
 
     y = np.array([all_items.index(t) for _, _, t in splits])

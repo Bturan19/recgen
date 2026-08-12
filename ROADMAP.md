@@ -17,11 +17,14 @@ Public product direction (strategy details are kept private).
 
 ## Next
 
-1. **Leakage-free reproducibility suite** — `AUDIT.md` + pinned seeds/caches;
-   re-verify all headline numbers after the repeat-purchase filter.
-2. **Denser benchmarks** — Amazon Beauty/Office (20-core) with published
-   baseline numbers (SASRec/BERT4Rec from papers) for a defensible
-   "competitive with SOTA-class" claim.
+1. ~~**Leakage-free reproducibility suite**~~ — DONE (2026-08-09): AUDIT.md
+   executed, title-level leak found+filtered, all headline numbers re-verified
+   (see `scripts/audit_report.md`).
+2. ~~**Denser benchmarks**~~ — PARTIAL: MovieLens-1M done under the
+   SASRec-paper protocol (6,040 users/3,416 items; BERT4Rec/ALS/SASRec/
+   popularity baselines; protocol validated via popularity 0.435 vs
+   published 0.433). recgen[1.7B] 0.598 HR@10 vs BERT4Rec 0.698 / ALS-64
+   0.655. Next: Amazon Beauty/Office (20-core) for the same comparison.
 3. **Backbone options** — SmolLM2-1.7B quality tier, quantization (MLX /
    bitsandbytes) for CPU serving.
 4. **Domain adaptation** — LoRA on unlabeled domain corpora (GenRec

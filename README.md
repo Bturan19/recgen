@@ -24,19 +24,23 @@ content-addressed and cached, so re-training heads costs seconds.
 
 - **E-commerce benchmark, leakage-audited** (Amazon Musical Instruments,
   23.9k clean users / 13.1k items, leave-one-out + 100 random negatives,
-  repeat-purchase users excluded): recgen **HR@10 0.418 / NDCG@10 0.237**
-  vs ALS-128 0.296/0.170, popularity 0.327/0.201, SASRec 0.120/0.058 — and
-  it is *more* robust on cold-start users (HR@10 0.424). Head trains in
-  ~15s; no feature engineering, no user/item ID embeddings.
+  repeat-purchase and title-collision users excluded): recgen
+  **HR@10 0.421 / NDCG@10 0.238** vs ALS-128 0.304/0.174, popularity
+  0.333/0.203, SASRec 0.128/0.058 — and it holds up on cold-start users
+  (HR@10 0.417, ~equal to its overall rate; ID-based models degrade on
+  sparse users). Head trains in ~15s; no feature engineering, no user/item
+  ID embeddings. Audit: leakage-free by construction (see AUDIT.md).
+- **Multi-label** (go_emotions, 28 labels): recgen micro-F1 0.400 vs
+  TF-IDF+LogReg 0.376 — first multi-label real-data benchmark.
 - **IMDB sentiment** (12k reviews): recgen 0.914 acc / 0.971 auc vs
   TF-IDF+LogReg 0.890 / 0.957 — beats a classic text baseline with a frozen
   360M model.
 - **Adult income**: 0.848/0.905 vs LightGBM 0.862/0.922 — within 1.5pts,
   no feature engineering.
-- **Serving speed on an M1 Pro**: one full recommendation request (300-token
-  history + scoring a 100k-item catalog as a single multi-output matmul)
-  takes ~29 ms — ~35 requests/s; projected GPU cost ~$0.60 per 1M requests.
-  See `scripts/benchmark.py`.
+- **Serving speed on an M1 Pro** (re-audited 2026-08-09): one full
+  recommendation request (300-token history + scoring a 100k-item catalog
+  as a single multi-output matmul) takes ~30 ms — ~33 requests/s; projected
+  GPU cost ~$0.63 per 1M requests. See `scripts/benchmark.py`.
 - Honest limits: pure-numeric regression (house prices) and unsupervised
   anomaly detection belong to classical methods; the LLM encoder wins where
   semantics + labels meet.

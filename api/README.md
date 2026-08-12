@@ -39,6 +39,19 @@ RECGEN_MODEL_DIR=models/SmolLM2-360M uv run uvicorn api.app:app --port 8000
 }
 ```
 
+- `POST /v1/rank_all` — score a full catalog in one multi-output matmul
+  (GenRec-style prefill-only serving); catalog embeddings are cached under a
+  key that includes the model + pooling, so backend switches never reuse stale
+  embeddings
+
+```json
+{
+  "context": "The user recently purchased: Zoom A2 Acoustic Guitar Pedal by Zoom",
+  "catalog": ["Item: Fender cable", "Item: Boss distortion pedal"],
+  "top_k": 2
+}
+```
+
 ## Economics (why this is cheap)
 
 1. One forward pass per request — no token-by-token generation.
@@ -51,7 +64,7 @@ RECGEN_MODEL_DIR=models/SmolLM2-360M uv run uvicorn api.app:app --port 8000
 ## Product roadmap
 
 - [x] `/v1/encode`, `/v1/rank` (cosine/trained-head scoring)
+- [x] `/v1/rank_all` (one-encode + one-matmul full-catalog scoring)
 - [ ] Trained `CatalogRankingHead` checkpoints served via `RECGEN_HEAD_DIR`
-- [ ] Batch scoring endpoint for full-catalog ranking
 - [ ] Authentication + usage metering (the monetizable layer)
 - [ ] Quantized backends (bitsandbytes / MLX) for CPU serving

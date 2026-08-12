@@ -149,7 +149,7 @@ def hr_ndcg(scores_pos, scores_neg):
 def main():
     from leakfree import load_splits, leak_mask, split_sets
     splits, meta = load_splits(min_hist=5, max_history=MAX_LEN, n_users=N_USERS, seed=SEED)
-    mask = leak_mask(splits)
+    mask = leak_mask(splits, meta=meta)
     n_leaked = int(mask.sum())
     splits = [s for s, m in zip(splits, mask) if not m]
     print(f"leakage filter: removed {n_leaked}/{N_USERS} users (test item in history); remaining {len(splits)}")

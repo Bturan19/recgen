@@ -34,7 +34,7 @@ def bootstrap_ci(ranks, n=1000, seed=0):
 def main():
     from leakfree import load_splits, leak_mask, split_sets
     splits, meta = load_splits(min_hist=5, max_history=10, n_users=N_USERS)
-    mask = leak_mask(splits)
+    mask = leak_mask(splits, meta=meta)
     splits = [s for s, m in zip(splits, mask) if not m]
     print(f"leakage filter: removed {int(mask.sum())}/{N_USERS} users; remaining {len(splits)}")
     n_all = len(splits)

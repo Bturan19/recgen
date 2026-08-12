@@ -80,11 +80,9 @@ class LoraHeadTrainer:
         return ids["input_ids"].to(self.device), ids["attention_mask"].to(self.device)
 
     def _pool(self, hidden, attn):
-        if self.encoder.pooling == "last":
-            seq_lens = attn.sum(dim=1).long()
-            idx = torch.arange(hidden.shape[0], device=hidden.device)
-            return hidden[idx, seq_lens - 1]
-        return (hidden * attn.unsqueeze(-1)).sum(dim=1) / attn.sum(dim=1, keepdim=True)
+        from .encoder import pool_hidden
+
+        return pool_hidden(hidden, attn, self.encoder.pooling).contiguous()
 
     def _encode_batch(self, input_ids, attn):
         out = self.lora_model.base_model.model.model(input_ids=input_ids, attention_mask=attn)
@@ -190,10 +188,10 @@ class LoraHeadTrainer:
         from peft import PeftModel
 
         self.verbalizer = verbalizer
-        out_dim = 2 if self.task == "classifier" else 1
+        self.classes_ = np.load(f"{out_dir}/classes.npy")
+        out_dim = len(self.classes_) if self.task == "classifier" else 1
         self.head = _MLP(self.encoder.dim, self.head_hidden, out_dim, self.head_dropout).to(self.device)
         self.head.load_state_dict(torch.load(f"{out_dir}/head.pt", map_location=self.device))
-        self.classes_ = np.load(f"{out_dir}/classes.npy")
         self.lora_model = PeftModel.from_pretrained(self.encoder.model, f"{out_dir}/adapter")
         self.lora_model.eval()
         self.head.eval()

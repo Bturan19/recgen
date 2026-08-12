@@ -277,43 +277,158 @@ req/s; 1.7B ~90ms -> ~11 req/s. Projections: ~3M req/day on one M1; ~$0.60
 GPU per 1M requests (A10-class est); 100k-item catalog embeds once in ~0.04
 GPU-hr, then cached.
 
-## LEAKAGE AUDIT + leak-free results (final numbers)
+## LEAKAGE AUDIT + leak-free results (final numbers, re-run 2026-08-09)
 
 BUG: users whose held-out (last) purchase also appears in their history
 (repeat purchase) leaked the answer into the model input. 1,134/25,000
 sampled users (~4.5%) affected. Fixed in `leakfree.py`; all e-commerce
-benchmarks now exclude such users (23,866 clean users). The previously
-published e-commerce numbers below are SUPERSEDED by these:
+benchmarks now exclude such users. A second, rarer leak class was found in
+the audit session: a *different* item_id sharing the held-out item's title
+also puts the answer in the verbalized text — 1/23,866 users (train only,
+impact nil), now excluded too. Final clean set: 23,865 users, 13,136 items,
+2,387 test users.
 
 Standard protocol (leave-one-out + 100 random negatives), leak-free:
 | model | HR@10 | NDCG@10 |
 |---|---|---|
-| recgen | 0.4179 | 0.2366 |
-| popularity | 0.3266 | 0.2008 |
-| ALS-128 | 0.2956 | 0.1702 |
-| SASRec | 0.1198 | 0.0579 |
+| recgen | 0.4214 | 0.2375 |
+| popularity | 0.3326 | 0.2033 |
+| ALS-128 | 0.3037 | 0.1742 |
+| SASRec | 0.1282 | 0.0582 |
 
-Cold-start (history <= 7, 1285 users): recgen 0.424/0.239; popularity
-0.351/0.217; ALS 0.319/0.185; SASRec 0.130/0.062.
+Cold-start (history <= 7, 1284 users): recgen 0.417/0.242; popularity
+0.353/0.219; ALS 0.322/0.189; SASRec 0.133/0.061. (Note: on this run
+recgen's cold-start rate is ~equal to its overall rate, not higher; the
+"cold-start advantage" claim is no longer made.)
 
-Leak impact: recgen -2.6%, ALS -8.4%, SASRec -35% (sequence models memorize
-the leaked item best). recgen edge: +41% vs ALS, +3.5x vs SASRec.
+Leak impact: the first leak-free run (item-id filter, 23,866 users) cut the
+pre-filter numbers by recgen -2.6% / ALS -8.4% / SASRec -35% (sequence
+models memorize the leaked item best). The re-audited title-aware run moves
+recgen slightly UP (+0.8% rel. vs the item-id-filter run, 0.4179 -> 0.4214)
+because the test sample changed; recgen edge: +39% vs ALS, ~3.3x vs SASRec.
 
 Benchmarks that need no leak filter (row-level splits, no grouping):
 IMDB, Adult, house prices, SMS spam, cardiotocography — audited, OK.
+IMDB duplicate-text check: 9/3,000 test reviews duplicated in train, all
+label-consistent (benign, affects all methods equally).
 
-Full audit checklist: AUDIT.md (handoff for a fresh verification session).
+Full audit checklist: AUDIT.md; session report: scripts/audit_report.md.
 
-Leak-free full-catalog (13,137 items, 2,388 test users) + 2-stage (same 300
+Leak-free full-catalog (13,136 items, 2,387 test users) + 2-stage (same 300
 candidates for every ranker):
 | model | full recall@10 | full mrr@20 (ci95) | 2-stage rec@10 | 2-stage mrr@20 |
 |---|---|---|---|---|
-| recgen | 0.0197 | 0.0120 [0.0090,0.0153] | 0.0276 | 0.0132 [0.0101,0.0166] |
-| popularity | 0.0239 | 0.0112 [0.0083,0.0141] | 0.0239 | 0.0106 [0.0077,0.0135] |
-| ALS-128 | 0.0180 | 0.0082 [0.0063,0.0106] | 0.0155 | 0.0074 [0.0052,0.0098] |
-| ItemKNN | 0.0008 | 0.0006 | - | - |
+| recgen | 0.0218 | 0.0114 [0.0085,0.0144] | 0.0289 | 0.0138 [0.0104,0.0174] |
+| popularity | 0.0239 | 0.0112 [0.0083,0.0141] | 0.0239 | 0.0106 [0.0078,0.0135] |
+| ALS-128 | 0.0189 | 0.0083 [0.0062,0.0108] | 0.0168 | 0.0077 [0.0053,0.0101] |
+| ItemKNN | 0.0013 | 0.0006 | - | - |
 | EASE | 0.0063 | 0.0036 | - | - |
+| last-item | 0.0013 | 0.0008 | 0.0021 | 0.0010 |
 
 Full-catalog is noisy: recgen ≈ popularity on recall, ahead on MRR and
 clearly ahead of ALS on MRR/recall. The 100-negative standard protocol (see
 above) is the primary claim and favors recgen strongly.
+
+## Phase 3b: MovieLens-1M — GenRec-style movie recommendation (in progress)
+
+The Netflix use case: next-item movie recommendation under the SASRec-paper
+protocol (Kang & McAuley ICDM'18): 5-core (6,040 users / 3,416 items — exact
+reproduction of the paper's Table II), implicit feedback, per-user temporal
+split (last = test, second-to-last = val, rest = train, ALL users in
+training), eval = positive + 100 random negatives, HR@10/NDCG@10.
+Leak-free by construction: MovieLens pairs are unique, titles are unique.
+Protocol validity check: popularity = 0.435 vs paper's PopRec 0.433 — the
+eval protocol reproduces published numbers.
+
+Backbone encoding: item = "Movie: <title>. Genres: <g>"; history = last 20
+watched movies (LLM context limit), while SASRec/BERT4Rec see up to 200.
+
+| model | HR@10 | NDCG@10 | notes |
+|---|---|---|---|
+| BERT4Rec (ours, d=64, 2L, mask 0.15) | 0.6983 | 0.4538 | full-softmax cloze |
+| ALS-64 (implicit, fair) | 0.6545 | 0.3979 | |
+| recgen[smol17] | 0.5978 | 0.3678 | 1.7B encoder, head ~30s |
+| recgen[smol360] | 0.5303 | 0.3205 | 360M encoder |
+| popularity | 0.4349 | 0.2404 | |
+| SASRec (ours, d=50, 1-neg BCE) | 0.4407 | 0.2435 | weaker than published (see caveat) |
+
+Cold-start (history <= 30, 916 users): recgen[smol17] 0.6856 / 0.4286;
+recgen[smol360] 0.6168 / 0.3716; BERT4Rec 0.7555 / 0.4954; SASRec 0.5207 /
+0.2991; popularity 0.5011 / 0.2918 — the LLM encoder closes the gap to the
+transformer baseline on short histories (9% behind BERT4Rec vs 14% overall).
+
+Caveats (honest reporting):
+- BERT4Rec's paper reports ~0.84 HR@10 on ML-1M; the original SASRec paper
+  reports 0.8245. Our implementations are NOT grid-searched (fixed
+  hyperparameters, no L2 tuning), and our SASRec (1 negative/step BCE)
+  underperforms its published-class numbers (0.64 in BERT4Rec's own
+  reimplementation). We report our own baselines on the identical protocol.
+- recgen sees 20 movies of history vs 200 for the sequence models; the head
+  trains on one (history -> val) example per user, vs ~150k masked-position
+  examples for BERT4Rec. The comparison is structurally favorable to the
+  sequence models.
+- Claim: "competitive with ALS-class MF (within ~9%) and within ~14% of a
+  transformer sequential baseline (BERT4Rec), with zero feature engineering
+  and a head that trains in seconds; closes most of the gap on cold-start
+  users" — NOT SOTA.
+- 7-9B backbone feasibility (2026-08-09): Qwen2.5-7B loads on MPS (32GB M1
+  Pro) but encodes at ~30-70 tokens/s — ~25h for the full ml-1m encode. Not
+  usable on this hardware; needs MLX 4-bit quantization or a GPU. The 7B
+  download was removed (2026-08-09) after the cleanup.
+
+## Marketplace product moderation (private dataset) (multimodal, Aug 2026)
+
+Dataset: a gated HF marketplace-moderation sample (4,000 products; Gemini-3.1-flash-lite eval
+as labels; 78.5% approved / 21.5% rejected; 23 rejection tags; up to 8
+images/product). Task: predict eval_decision. 67% of rejection reasons are
+image-driven (brand on box, specs printed on product, title/image mismatch).
+
+Pipeline: verbalized product text (title/brand/category/attrs/description)
+-> SmolLM2-1.7B mean-pool (cached) + SigLIP2-SO400M image embeddings (mean
+over up to 4 images) -> concat -> head. Apple Vision OCR extracted into the
+text did NOT help (mean-pooling dilutes contradiction signals).
+
+Results (same 80/10/10 split, 400-row test):
+| model | acc | F1 | AUC |
+|---|---|---|---|
+| text-only MLP (1.7B) | 0.843 | 0.519 | 0.832 |
+| text+img MLP | 0.861 | 0.611 | 0.869 |
+| text+img LightGBM | 0.866 | 0.571 | 0.879 |
+| text+img LightGBM weighted + tuned th | **0.886** | **0.716** | **0.881** |
+| + OCR embeddings / multi-task tags | no gain | | |
+| 5-fold CV (best config) | 0.817±0.034 | 0.595 | 0.820 |
+| Qwen2.5-VL-3B judge (20 rows) | 0.55 | | over-rejects vs Gemini style |
+
+Notes:
+- OCR-in-context (1.7B), Apple Vision OCR features, multi-task tag head,
+  ensembles: no improvement over the plain concat.
+- Gemini's decision style is lenient-with-notes (approves but flags category
+  mismatches); the VLM judge over-rejects, hurting agreement.
+- Honest claim: ~0.82-0.89 acc (split-dependent), ~0.88 AUC ceiling with
+  frozen 1.7B + SigLIP2 + GBDT head on 3.2k train rows. More data or a 7B+
+  VLM tuned as a judge would be the next lever.
+
+### recgen framing + throughput (marketplace)
+
+This is a full recgen application: verbalize (title/brand/category/attrs/
+description) -> frozen SmolLM2-1.7B mean-pool embedding + frozen SigLIP2
+image embeddings -> GBDT head. Multimodal by concatenating frozen encoders
+at the head level — no VLM generation, no fine-tuning.
+
+Measured serving throughput (M1 Pro, MPS, batch=128):
+| stage | rate | per day |
+|---|---|---|
+| text encode (1.7B, ~800 tok/product) | 1.53 products/s | ~132k |
+| image encode (SigLIP2 384px, 2.8 img/product) | 3.8 img/s | ~116k |
+| head predict (MLP / LGBM on 3200-dim) | >12k products/s | millions |
+| combined pipeline (encode once, cached) | ~1.5 products/s cold | ~120k/day cold; repeat scoring ~12k/s |
+
+- The head is not the bottleneck; encode is. Cached embeddings make re-scoring
+  effectively free (content-addressed cache).
+- vs the previous in-house pipeline at 70k/day: this laptop pipeline is ~120k/day cold-start;
+  on an A100 with batched/VLLM-style encoder serving, the same embeddings
+  pipeline scales to millions/day (the encode is the only GPU-bound stage).
+- vs the VLM judge (8 s/row -> ~11k/day): the frozen-encoder pipeline is
+  ~10x cheaper AND more accurate as a Gemini proxy (0.82-0.89 vs 0.55).
+- Cost framing: 1.7B text + 400M vision, head is a few MB of weights;
+  the whole model family fits a laptop/CPU serving box.

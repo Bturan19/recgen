@@ -29,9 +29,33 @@ def load_splits(min_hist: int = 5, max_history: int = 10, n_users: int = N_USERS
     return splits, meta
 
 
-def leak_mask(splits):
-    """True where the test item appears in the user's history (label leakage)."""
-    return np.array([any(it == t for it, _ in hist) for _, hist, t in splits])
+def leak_mask(splits, meta=None):
+    """True where the test item appears in the user's history (label leakage).
+
+    Two levels are checked:
+    1. item_id-level: the held-out item itself is in the history (repeat
+       purchase) — the answer is literally in the input;
+    2. title-level: a *different* item_id with the *same title* is in the
+       history — the answer is present in the verbalized text even though the
+       ids differ (measured at 1/23,866 users, all in train).
+    """
+    mask = np.array([any(it == t for it, _ in hist) for _, hist, t in splits])
+    if meta is None:
+        return mask
+    titles = {}
+    for r in meta.select(["item_id", "title"]).unique(subset="item_id").to_dicts():
+        titles.setdefault(r["title"], set()).add(r["item_id"])
+    for i, (_, hist, t) in enumerate(splits):
+        if mask[i]:
+            continue
+        m = meta.filter(meta["item_id"] == t)
+        if m.is_empty():
+            continue
+        ttitle = m.to_dicts()[0]["title"]
+        same_title_ids = titles.get(ttitle, set())
+        if any(it in same_title_ids for it, _ in hist):
+            mask[i] = True
+    return mask
 
 
 def split_sets(splits, n_tr_ratio=0.8, n_va_ratio=0.1):
