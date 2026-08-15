@@ -119,14 +119,30 @@ head sees a *targeted* representation instead of one averaged vector.
 ## 5. The architecture — full spec
 
 ### 5.1 Encoder
-- Small VLM, **2B class**, images direct (no verbalize). Candidates:
-  - `Qwen/Qwen2-VL-2B-Instruct` (~4.5GB fp16) — strongest OCR/text-in-image,
-    good Turkish; needs download (~4.5GB).
-  - `HuggingFaceTB/SmolVLM2-2.2B-Instruct` — SigLIP tower + SmolLM2 text;
-    faster on MPS (~2-3x), decent but weaker OCR. Needs download (~4.4GB).
-  - PaliGemma-3B — slower on MPS; skip unless the above fail.
-- Recommendation: **start with SmolVLM2-2.2B for iteration speed**, keep
-  Qwen2-VL-2B as the quality tier (one overnight run).
+- Small VLM, **≤2B class**, images direct (no verbalize). Candidates, in
+  order of recommendation:
+  1. **Trendyol-Vision-Flash (InternVL3.5-1B) — ALREADY ON DISK, start here.**
+     - 1B params (smallest = fastest MPS fine-tune), fine-tuned on e-commerce
+       catalog data (brand detection, attribute extraction, content safety,
+       Turkish primary) — domain-specialized for exactly this task.
+     - Gotchas: custom code is broken on transformers 5.14 and 4.49/4.46;
+       **works on transformers 4.56.2 via the manual greedy decoder** in
+       `experiments/moderation/trendyol_judge.py` (pattern: build
+       `<img><IMG_CONTEXT>×256×n_img</img>` tokens, `model.img_context_token_id=151671`,
+       `image_flags=ones(n_img)`, loop `model(input_ids, pixel_values, image_flags)`).
+     - For the hybrid we need `output_hidden_states=True` on that forward —
+       the signature accepts it; verify the returned sequence covers all
+       text+image tokens (if InternVL's custom forward only returns decoder
+       hidden states, take those; the query block just needs a token-level
+       sequence).
+     - Run under `uv run --with "transformers==4.56.2"` (project env is 5.14.1).
+  2. **SmolVLM2-2.2B** (`HuggingFaceTB/SmolVLM2-2.2B-Instruct`, download
+     ~4.4GB) — standard transformers API, fastest on MPS (~2-3x vs
+     Qwen-VL-2B), SigLIP tower + SmolLM2 text; weaker OCR than Qwen. Best
+     LoRA fine-tune target for iteration speed.
+  3. **Qwen2-VL-2B-Instruct** (download ~4.5GB) — strongest OCR/text-in-image
+     + Turkish; quality tier, slower on MPS.
+  4. PaliGemma-3B — slower on MPS; skip unless 1-3 fail.
 - Extraction: run ONE forward, take `outputs.last_hidden_state` → (B, T, D)
   for the FULL sequence (visual+text tokens interleaved by the VLM).
 
@@ -175,13 +191,16 @@ loss = w1*BCE(mod) + w2*CatLoss(cat) + w3*GroupedSoftmax(attr)
 Phase 0 — plumbing (0.5 day):
 1. `experiments/hybrid/data.py` — reuse `experiments/moderation/data.py`
    (load, verbalize text fields, stratified_split, image_paths).
-2. `experiments/hybrid/vlm_hidden.py` — load SmolVLM2-2.2B, one forward per
-   product (up to 3 images, 448px), return last_hidden_state + the mask of
-   image/text token positions (needed for attention guidance). Cache hidden
-   states to `.cache/hybrid/smolvlm/hidden_{split}.npy` (4k rows × T × D —
-   watch size: 4k × ~800 tokens × 2048 × 2B ≈ 13GB fp16 — store per-split or
-   subsample positions; alternatively store only the (T,D) per product on
-   disk in chunks).
+2. `experiments/hybrid/vlm_hidden.py` — encoder per §5.1. **Start with
+   Trendyol-Vision-Flash** (on disk, 1B — fastest): one forward per product
+   (up to 3 images, 448px, `output_hidden_states=True`), return
+   last_hidden_state + the mask of image/text token positions (needed for
+   attention guidance). Cache hidden states to
+   `.cache/hybrid/trendyol/hidden_{split}.npy`. For SmolVLM2-2.2B/Qwen2-VL-2B
+   (standard transformers) the same helper works via `AutoModelForImageTextToText`.
+   Size watch: 4k rows × ~800 tokens × D × 2B — Trendyol D=1024 (≈6.5GB
+   fp16); SmolVLM2 D=2048 (≈13GB) — store per-split chunks or subsample
+   tokens.
 3. `experiments/hybrid/heads.py` — the cross-attn query block + 4 heads.
 4. `experiments/hybrid/train.py` — multi-task trainer (MPS, batch 2-4,
    grad accum, clip 1.0, lr 1e-4, early stop on val acc, NaN-skip,
@@ -244,20 +263,25 @@ uv run hf download HuggingFaceTB/SmolVLM2-2.2B-Instruct --local-dir models/SmolV
    easily — keep LoRA small, epochs low, and lean on the frozen-VLM baseline
    as the safety result.
 2. **MPS speed:** fine-tuning a 2B VLM ≈ 2-4s/sample → a 3-epoch run ≈
-   6-12h. Budget overnight runs; SmolVLM2-2.2B is ~2-3x faster than Qwen-VL-2B.
-3. **Hidden-state caching size:** (4000, ~800, 2048) fp16 ≈ 13GB — chunk the
-   cache or subsample tokens; the query block only needs them at train time.
+   6-12h. Budget overnight runs; SmolVLM2-2.2B is ~2-3x faster than Qwen-VL-2B;
+   Trendyol-Vision-Flash (1B) is the fastest of all three.
+3. **Hidden-state caching size:** Trendyol D=1024 (≈6.5GB fp16 for 4k×800);
+   SmolVLM2 D=2048 (≈13GB) — chunk the cache or subsample tokens; the query
+   block only needs them at train time.
 4. **Attention guidance targets are weak** (keyword-matched from eval_reason)
    — if KL guidance hurts, drop w5; the multi-head structure alone is the
    main win.
 5. **Category tree:** 645 leaves; hierarchical (hyperbolic) head needs the
    tree structure extracted from CategoryHierarchy strings — a small prep
    task; the flat head is the safe default.
-6. **Trendyol-Vision-Flash** (in models/, 2GB, custom code, works via the
-   manual decoder in trendyol_judge.py) can optionally be reused as a
-   *captioner* for the verbalized-text path or as an additional frozen
-   encoder for the query block — its zero-shot decisions are NOT aligned
-   with the labels (0.376), so don't use it as a judge.
+6. **Trendyol-Vision-Flash quirks when used as the hybrid encoder:** custom
+   code requires the transformers 4.56.2 overlay (`uv run --with
+   "transformers==4.56.2"`); verify `output_hidden_states=True` returns the
+   full token-level sequence (its forward signature accepts it; test on one
+   product before the batch cache job). Its zero-shot DECISIONS are not
+   aligned with the labels (0.376 as a judge) — that is irrelevant for the
+   hybrid (we only consume its hidden states; the query block + heads learn
+   the alignment).
 7. **Data privacy:** the parquet is irreplaceable (HF repo gone). Never push
    it; data/ and models/ are gitignored.
 
@@ -265,7 +289,10 @@ uv run hf download HuggingFaceTB/SmolVLM2-2.2B-Instruct --local-dir models/SmolV
 
 1. Verify state: `ls data/qwen_images | wc -l` → 4000;
    `ls .cache/moderation/smol17/` → caches present; `uv run pytest tests/ -q`.
-2. Download SmolVLM2-2.2B (+ Qwen2-VL-2B as the quality tier).
+2. **No download needed to start**: Trendyol-Vision-Flash is on disk
+   (`models/Trendyol-Vision-Flash`) — build `experiments/hybrid/vlm_hidden.py`
+   around it first (transformers 4.56.2 overlay), and download SmolVLM2-2.2B
+   (+ Qwen2-VL-2B as quality tier) only when needed for Phase 2.
 3. Build `experiments/hybrid/` per §6 Phase 0-1 (frozen VLM + query block on
    cached hidden states) — this is the decisive cheap experiment.
 4. Only then move to LoRA + attention guidance (Phase 2).
